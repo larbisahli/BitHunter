@@ -72,7 +72,7 @@ class API:
             try:
                 price_float = float(bit_stamp_tick.json()['last'])
                 price_str = str(f"{int(price_float):,d}") + "." + str(
-                    round(abs(price_float - int(price_float)), 2)).split(".")[1]
+                    round(abs(price_float - int(price_float)), 1)).split(".")[1]
                 return price_str, price_float
             except JSONDecodeError:
                 return None
@@ -97,8 +97,10 @@ class API:
             return None
         return float(response.text)
 
-
-old_btc_price = API().btc()[1]
+try:
+    old_btc_price = API().btc()[1]
+except Exception:
+    old_btc_price = 0
 
 
 class thread:
@@ -119,22 +121,96 @@ class thread:
                 break
 
 
-
-
 class Ui_Form(object):
 
-
-    def btc_price(self):
+    def update_btc(self):
         global old_btc_price
-        for i in range(1, 2):
-            updated_btc_price = API().btc()[1]
+        _translate = QtCore.QCoreApplication.translate
+        btc_price = API().btc()
+
+        if btc_price is not None:
+            updated_btc_price = btc_price[1]
+            str_btc_price = btc_price[0]
             if updated_btc_price > old_btc_price:
-                print("up", updated_btc_price, old_btc_price)
+                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                             "background: transparent;\n"
+                                             "color: rgb(0, 132, 0);")
+                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
             elif updated_btc_price < old_btc_price:
-                print("down", updated_btc_price, old_btc_price)
+                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                             "background: transparent;\n"
+                                             "color: rgb(188, 0, 0);")
+                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
             else:
-                print(updated_btc_price, old_btc_price)
-            old_btc_price = updated_btc_price if updated_btc_price is not None else old_btc_price
+                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                             "background: transparent;\n"
+                                             "color: rgb(0, 132, 0);")
+                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
+            old_btc_price = updated_btc_price
+
+    def user_wallet(self):  # wallet
+        global old_btc_price
+        global identity
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            input_wallet = str(self.input_wallet_balance.text())
+            now = datetime.datetime.now()
+            _btc_ = old_btc_price
+            pass_0 = False
+            currency_ = "SGD"
+            pass_ = False
+            currency_price = 0
+            if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+                currency_price = value["currency_Price"]
+                currency_ = value["currency"]
+                time_pass = value["time"]
+                pass_ = True if time_pass != now else False
+            else:
+                pass_ = True
+                pass_0 = True
+
+            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText()) if pass_0 else \
+                API.currency_exchange(currency_) if not pass_ else currency_price
+
+            if _btc_ is not None:
+                if input_wallet != "":
+
+                    Table(f"Prevalues_{identity}").create()
+                    if not Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                        Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).insert()
+                    else:
+                        Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).update()
+
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
+                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 2)).split(".")[1]
+
+                    xcurrency = round(float(currency_price) * xusd, 2)
+                    currency = str(f"{int(xcurrency):,d}") + "." + \
+                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+
+                    btc_ = round((float(input_wallet) * 0.00000001), 4)
+
+                    self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
+                    self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
+                    self.wallet_S_label.setText(_translate("Form", f"{usd} $"))
+                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+
+                    if pass_:
+
+                        if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                            data = {"currency_Price": currency_price,
+                                    "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                            Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
+                        else:
+                            data = {"currency_Price": currency_price,
+                                    "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                            Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
+            else:
+                pass
+
+        except Exception:
+            pass
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
@@ -716,6 +792,9 @@ class Ui_Form(object):
         self.input_wallet_balance.setText("")
         self.input_wallet_balance.setAlignment(QtCore.Qt.AlignCenter)
         self.input_wallet_balance.setObjectName("input_wallet_balance")
+        self.input_wallet_balance.returnPressed.connect(self.user_wallet)
+        # =====================
+
         self.label_39 = QtWidgets.QLabel(self.frame_5)
         self.label_39.setGeometry(QtCore.QRect(20, 80, 61, 24))
         self.label_39.setStyleSheet("\n"
@@ -913,13 +992,15 @@ class Ui_Form(object):
                                       "}")
         self.wallet_btn.setText("")
         self.wallet_btn.setObjectName("wallet_btn")
+
+        self.wallet_btn.clicked.connect(self.user_wallet)
+
+        # ================================
+
         self.delete_btn = QtWidgets.QPushButton(self.frame_5)
         self.delete_btn.setGeometry(QtCore.QRect(85, 166, 28, 28))
-        self.delete_btn.setStyleSheet("\n"
-                                      "\n"
-                                      "*{\n"
-                                      "\n"
-                                      "    background-image: url(:/images/Images/icons8-trash-24.png);\n"
+        self.delete_btn.setStyleSheet("*{\n"
+                                      "background-image: url(:/images/Images/icons8-trash-24.png);\n"
                                       "background-color: transparent ;\n"
                                       "\n"
                                       "}\n"
@@ -3059,6 +3140,9 @@ class Ui_Form(object):
         self.comboBox1_historical_data_2.addItem("")
         self.comboBox1_historical_data_2.addItem("")
         self.comboBox1_historical_data_2.addItem("")
+        self.comboBox1_historical_data_2.currentIndexChanged.connect(self.currency_combo)
+        # =========================
+
         self.frame_22 = QtWidgets.QFrame(self.frame_4)
         self.frame_22.setGeometry(QtCore.QRect(1, 300, 279, 51))
         self.frame_22.setStyleSheet("background: rgba(0, 0, 0,150);\n"
@@ -3072,10 +3156,10 @@ class Ui_Form(object):
                                     "background: transparent;")
         self.label_11.setObjectName("label_11")
         self.btc_price = QtWidgets.QLabel(self.frame_22)
-        self.btc_price.setGeometry(QtCore.QRect(140, 10, 131, 31))
+        self.btc_price.setGeometry(QtCore.QRect(120, 10, 151, 31))
         self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                      "background: transparent;\n"
-                                     "color: rgb(188, 0, 0);")
+                                     "color: rgb(0, 132, 0);")
         self.btc_price.setAlignment(QtCore.Qt.AlignCenter)
         self.btc_price.setObjectName("btc_price")
         self.image_btn = QtWidgets.QPushButton(self.frame_4)
@@ -3117,8 +3201,132 @@ class Ui_Form(object):
         QtCore.QMetaObject.connectSlotsByName(Form)
         # ----------------------------------------
         self.table()
+        self.currency_combo_init()
 
         # =========================================
+
+    def currency_combo_init(self):
+        _translate = QtCore.QCoreApplication.translate
+        _btc_ = old_btc_price
+        now = datetime.datetime.now()
+        currency_price = 0
+        try:
+            if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+                currency_price = value["currency_Price"]
+                currency_ = value["currency"]
+                time_pass = value["time"]
+                pass_ = True if time_pass != now else False
+
+                a = 0
+                b = 1
+                cc = 2
+                d = 3
+
+                if currency_ == "SGD":
+                    a = 0
+                    b = 1
+                    cc = 2
+                    d = 3
+                if currency_ == "CAD":
+                    a = 1
+                    b = 0
+                    cc = 2
+                    d = 3
+                if currency_ == "EUR":
+                    a = 1
+                    b = 1
+                    cc = 0
+                    d = 3
+                if currency_ == "MAD":
+                    a = 3
+                    b = 1
+                    cc = 2
+                    d = 0
+                self.comboBox1_historical_data_2.setItemText(a, _translate("Form", "SGD"))
+                self.comboBox1_historical_data_2.setItemText(b, _translate("Form", "CAD"))
+                self.comboBox1_historical_data_2.setItemText(cc, _translate("Form", "EUR"))
+                self.comboBox1_historical_data_2.setItemText(d, _translate("Form", "MAD"))
+            else:
+                pass_ = True
+                self.comboBox1_historical_data_2.setItemText(0, _translate("Form", "SGD"))
+                self.comboBox1_historical_data_2.setItemText(1, _translate("Form", "CAD"))
+                self.comboBox1_historical_data_2.setItemText(2, _translate("Form", "EUR"))
+                self.comboBox1_historical_data_2.setItemText(3, _translate("Form", "MAD"))
+
+            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText()) if pass_ else\
+                currency_price
+
+            if _btc_ is not None:
+                Table(f"Prevalues_{identity}").create()
+                if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                    input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
+
+                    input_wallet = input_wallet[1]
+
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
+                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 2)).split(".")[1]
+
+                    xcurrency = round(float(currency_price) * xusd, 2)
+                    currency = str(f"{int(xcurrency):,d}") + "." + \
+                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+
+                    btc_ = round((float(input_wallet) * 0.00000001), 4)
+
+                    self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
+                    self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
+                    self.wallet_S_label.setText(_translate("Form", f"{usd} $"))
+                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+
+                if pass_:
+                    if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                        data = {"currency_Price": currency_price,
+                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                        Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
+                    else:
+                        data = {"currency_Price": currency_price,
+                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                        Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
+
+        except Exception:
+            pass
+
+    def currency_combo(self):
+        _translate = QtCore.QCoreApplication.translate
+        _btc_ = old_btc_price
+        now = datetime.datetime.now()
+        try:
+            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText())
+
+            if _btc_ is not None:
+                Table(f"Prevalues_{identity}").create()
+                if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                    input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
+
+                    input_wallet = input_wallet[1]
+                    print("!!", input_wallet)
+
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
+
+                    xcurrency = round(float(currency_price) * xusd, 2)
+                    currency = str(f"{int(xcurrency):,d}") + "." + \
+                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+
+                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+
+                    if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                        data = {"currency_Price": currency_price,
+                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                        Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
+                    else:
+                        data = {"currency_Price": currency_price,
+                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
+                        Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
+
+            else:
+                pass
+        except Exception:
+            pass
 
     def pre_profile(self):
         files = []
@@ -3451,16 +3659,12 @@ class Ui_Form(object):
         self.label_22.setText(_translate("Form", "Total Wins"))
         self.label_23.setText(_translate("Form", "Total Losses"))
         self.profile_total_losses_label.setText(_translate("Form", "+0.12304₿"))
-        self.wallet_sato_label.setText(_translate("Form", "123,840,223 sat"))
-        self.wallet_btc_label.setText(_translate("Form", "1,23 ₿"))
-        self.wallet_S_label.setText(_translate("Form", "10,234 $"))
-        self.wallet_SS_label.setText(_translate("Form", "12,234"))
-        self.comboBox1_historical_data_2.setItemText(0, _translate("Form", "SGD"))
-        self.comboBox1_historical_data_2.setItemText(1, _translate("Form", "CAD"))
-        self.comboBox1_historical_data_2.setItemText(2, _translate("Form", "EUR"))
-        self.comboBox1_historical_data_2.setItemText(3, _translate("Form", "MAD"))
+        self.wallet_sato_label.setText(_translate("Form", "0 sat"))
+        self.wallet_btc_label.setText(_translate("Form", "0 ₿"))
+        self.wallet_S_label.setText(_translate("Form", "0 $"))
+        self.wallet_SS_label.setText(_translate("Form", "0"))
         self.label_11.setText(_translate("Form", "BTC PRICE"))
-        self.btc_price.setText(_translate("Form", "10,234$"))
+        self.btc_price.setText(_translate("Form", f"{API.btc()[0].split('.')[0]}$"))
 
 
 if __name__ == "__main__":

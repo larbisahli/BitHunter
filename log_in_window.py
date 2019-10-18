@@ -244,12 +244,12 @@ class Ui_Form(object):
     def check(self):
         _translate = QtCore.QCoreApplication.translate
         check = False
-        Table("sign").create()
-        pre_list_ = Extract("sign").select_column(column="pass")
+        Table("Sign").create()
+        pre_list_ = Extract("Sign").select_column(column="pass")
         len_ = len(pre_list_)
         if len_ != 0:
             check = True
-            list_ = Extract("sign").get_by_column(column="pass", cell=pre_list_[len_-1])
+            list_ = Extract("Sign").get_by_column(column="pass", cell=pre_list_[len_-1])
         else:
             self.input_signin_username.setText(_translate("Form", ""))
             self.input_signin_password.setText(_translate("Form", ""))
@@ -266,8 +266,8 @@ class Ui_Form(object):
 
         username = str(self.input_signin_username.text())
         password = str(self.input_signin_password.text())
-        Table("sign").create()
-        list_ = Extract("sign").select_column(column="username")
+        Table("Sign").create()
+        list_ = Extract("Sign").select_column(column="username")
         if len(list_) == 0:
             Sign(password=password, username=username).insert()
         else:
@@ -291,8 +291,8 @@ class Ui_Form(object):
         import pickle
         with open("current_access.txt", "wb") as w:
             pickle.dump(current_user, w)
-        Table("sign").create()
-        list_ = Extract("sign").get_by_column(column="pass", cell=hash_(username))
+        Table("Sign").create()
+        list_ = Extract("Sign").get_by_column(column="pass", cell=hash_(username))
         if hash_(username) in list_ and list_[1] == encrypt(password):
             from MainWindow import Ui_Form
             self.ui = Ui_Form()

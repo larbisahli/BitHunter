@@ -60,22 +60,18 @@ class Table:
                                 date TEXT,
                                 Note TEXT
                                 )""")
-        elif self._name.split("_")[0] == "Pre_values":
+        elif self._name.split("_")[0] == "Prevalues":
             c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
-                                id INTEGER PRIMARY KEY,
-                                Wallet INTEGER,
-                                Notify INTEGER,
-                                Currency_exchange TEXT,
-                                Open_trade TEXT,
-                                combo INTEGER
+                                id TEXT PRIMARY KEY,
+                                data TEXT
                                 )""")
 
-        elif self._name.split("_")[0] in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"]:
+        elif self._name.split("_")[0] in ["BTCHdaily", "BTCHweekly", "BTCHmonthly"]:
             api.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}( dwm INTEGER , date TEXT, price REAL )""")
             # we will be using thread to download bitcoin historical data online and upload it in database
             # we gonna need a temporary cursor (api) for that
 
-        else:
+        elif self._name == "Sign":
             c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
                                             username TEXT PRIMARY KEY,
                                             password TEXT,
@@ -192,21 +188,17 @@ class Notes:
 
 class Pre_values:
 
-    def __init__(self, id_, wallet, notify, currency, open_trade, combo):
+    def __init__(self, name, id_, data):
         self.id_ = id_
-        self.wallet = wallet
-        self.notify = notify
-        self.currency = currency
-        self.open_trade = open_trade
-        self.combo = combo
+        self.data = data
+        self.name = name
 
     def insert(self):
         try:
             lock.acquire(True)
             with conn:
-                c.execute("INSERT INTO pre_values VALUES (:id, :wallet, :notify, :currency, :open_trade, :combo)",
-                          {'id': self.id_, 'wallet': self.wallet, 'notify': self.notify,
-                           'currency': self.currency, 'open_trade': self.open_trade, 'combo': self.combo})
+                c.execute(f"INSERT INTO {self.name} VALUES (:id, :data)",
+                          {'id': self.id_, 'data': self.data})
         except sqlite3.Error:
             pass
         finally:
@@ -216,10 +208,8 @@ class Pre_values:
         try:
             lock.acquire(True)
             with conn:
-                c.execute("""UPDATE pre_values SET :wallet, :notify, :currency, :open_trade, :combo
-                              WHERE id = :id""",
-                          {'id': self.id_, 'wallet': self.wallet, 'notify': self.notify,
-                           'currency': self.currency, 'open_trade': self.open_trade, 'combo': self.combo})
+                c.execute(f"""UPDATE {self.name} SET data = :data WHERE id = :id""",
+                          {'id': self.id_, 'data': self.data})
         except sqlite3.Error:
             pass
         finally:
@@ -275,9 +265,12 @@ class Extract:
             lock.release()
 
     def check_cell(self, id_):
-        if len(Extract(self.name).get_by_id(id_)) != 0:
-            return True
-        else:
+        try:
+            if Extract(self.name).get_by_id(id_) is not None:
+                return True
+            else:
+                return False
+        except IndexError:
             return False
 
     def delete(self, where=None, cell=None):
@@ -311,10 +304,7 @@ c = conn.cursor()
 api = conn.cursor()
 lock = threading.Lock()
 
-#Journal(201, 3, 2019, "xxxx", 2344,2345, 2355,-0.345).insert()
-
-#print(Extract(f'Journal').select_column("result"))
-
+#print(Extract(f"Prevalues_{identity}").check_cell("currency_api"))
 
 """
 the .api is the cursor for updates, this is to prevent any 
@@ -333,6 +323,13 @@ time as the update happened."""
  table-4-5-6: BTC_H_daily .api, BTC_H_weekly .api, BTC_H_monthly .api 
 
  table-7 sign
+
+
+                                Wallet INTEGER,
+                                Notify INTEGER,
+                                Currency_exchange TEXT,
+                                Open_trade TEXT,
+                                combo INTEGER
 
 ==============
 """
