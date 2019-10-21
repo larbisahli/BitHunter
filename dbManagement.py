@@ -1,4 +1,3 @@
-
 """
             ####################################
             #                                  #
@@ -120,7 +119,7 @@ class Sign:
 
 class Journal:
 
-    def __init__(self, id_, month, year, date, amount, entry, exit_, result):
+    def __init__(self, name, id_, month, year, date, amount, entry, exit_, result):
         self.id_ = id_
         self.date = date
         self.month = month
@@ -129,12 +128,13 @@ class Journal:
         self.entry = entry
         self.exit_ = exit_
         self.result = result
+        self.name = name
 
     def insert(self):
         try:
             lock.acquire(True)
             with conn:
-                c.execute("INSERT INTO Journal VALUES (:id, :month, :year, :date, :amount, :entry, :exit, :result)",
+                c.execute(f"INSERT INTO {self.name} VALUES (:id, :month, :year, :date, :amount, :entry, :exit, :result)",
                           {"id": self.id_, 'month': self.month, 'year': self.year, 'date': self.date,
                            "amount": self.amount, "entry": self.entry, "exit": self.exit_, "result": self.result})
         except sqlite3.Error:
@@ -146,7 +146,7 @@ class Journal:
         try:
             lock.acquire(True)
             with conn:
-                c.execute("""UPDATE Journal SET amount = :amount, entry = :entry, exit = :exit,
+                c.execute(f"""UPDATE {self.name} SET amount = :amount, entry = :entry, exit = :exit,
                               result = :result WHERE id = :id""", {"id": self.id_, "amount": self.amount,
                                                                    "entry": self.entry, "exit": self.exit_,
                                                                    "result": self.result})
@@ -158,16 +158,17 @@ class Journal:
 
 class Notes:
 
-    def __init__(self, title, date, note):
+    def __init__(self, name,title, date, note):
         self.title = title
         self.date = date
         self.note = note
+        self.name = name
 
     def insert(self):
         try:
             lock.acquire(True)
             with conn:
-                c.execute("INSERT INTO Notes VALUES (:title, :date, :note)",
+                c.execute(f"INSERT INTO {self.name} VALUES (:title, :date, :note)",
                           {'title': self.title, 'date': self.date, 'note': self.note})
         except sqlite3.Error:
             pass
@@ -178,7 +179,7 @@ class Notes:
         try:
             lock.acquire(True)
             with conn:
-                c.execute("""UPDATE Notes SET date = :date, note = :note WHERE title = :title""",
+                c.execute(f"""UPDATE {self.name} SET date = :date, note = :note WHERE title = :title""",
                           {'title': self.title, 'date': self.date, 'note': self.note})
         except sqlite3.Error:
             pass
@@ -292,8 +293,15 @@ class Extract:
             lock.release()
 
     def fetchall(self):
-        c.execute(f"select * from '{self.name}'")
-        return c.fetchall()
+        try:
+            lock.acquire(True)
+            with conn:
+                self.cursor.execute(f"select * from '{self.name}'")
+                return c.fetchall()
+        except sqlite3.Error:
+            return []
+        finally:
+            lock.release()
 
     def __len__(self):
         return len(self.select_column("id"))
@@ -304,7 +312,7 @@ c = conn.cursor()
 api = conn.cursor()
 lock = threading.Lock()
 
-#print(Extract(f"Prevalues_{identity}").check_cell("currency_api"))
+#print(len(Extract(f"Prevalues_{12}").fetchall()))
 
 """
 the .api is the cursor for updates, this is to prevent any 
@@ -318,7 +326,7 @@ time as the update happened."""
 
  table-2: Notes .c
 
- table-3:  Pre_values => ["wallet .c", "notify .c", "Currency_api .c", "open_trade .c, combo_Month".]
+ table-3:  Pre_values => ["wallet .c", "notify .c", "Currency_api .c", "open_trade .c, combo_Month","Jsave"]
 
  table-4-5-6: BTC_H_daily .api, BTC_H_weekly .api, BTC_H_monthly .api 
 

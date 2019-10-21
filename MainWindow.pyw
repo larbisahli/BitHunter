@@ -15,6 +15,7 @@ import datetime
 import pickle
 import time
 import traceback
+import threading
 import image_rc
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from os.path import expanduser
@@ -37,6 +38,7 @@ with open("current_access.txt", "rb") as r:
 
 identity = dictionary["identity"]
 
+
 def convert_bytes(num):
     """
     this function will convert bytes to MB.... GB... etc
@@ -54,7 +56,6 @@ def file_size(file_path):
     if os.path.isfile(file_path):
         file_info = os.stat(file_path)
         return convert_bytes(file_info.st_size)
-
 
 
 class API:
@@ -97,19 +98,20 @@ class API:
             return None
         return float(response.text)
 
+
 try:
     old_btc_price = API().btc()[1]
 except Exception:
     old_btc_price = 0
 
 
-class thread:
+class Thread:
 
     @staticmethod
     def every(delay, task):
         next_time = time.time() + delay
         while True:
-            if int(API.stop_threads()) != 0:  # this is to break the loop after the program closed
+            if 1 != 0:  # this is to break the loop after the program closed
                 time.sleep(max(0, next_time - time.time()))
                 try:
                     task()
@@ -123,11 +125,200 @@ class thread:
 
 class Ui_Form(object):
 
-    def update_btc(self):
+    def opentrade_init(self):
+        _translate = QtCore.QCoreApplication.translate
+
+        if not Extract(f"Prevalues_{identity}").check_cell("opentrade"):
+            Table(f"Prevalues_{identity}").create()
+            data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
+            Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).insert()
+            data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+            Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).insert()
+
+        dict_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+        amount = dict_["amount"]
+        entry = dict_["entry"]
+        state = dict_["state"]
+        date = dict_["date"]
+
+        print("dictionary", dict_)
+        if state != "closed":
+            self.checkBox_opentrade.setChecked(True)
+            color = "background: rgb(191, 0, 0);" if state == "SELL" else \
+                "background: rgb(0, 132, 0);"
+
+            self.trade_date.setText(_translate("Form", f"{date}"))
+            self.frame_12.setStyleSheet(color)
+            self.trade_amount.setText(_translate("Form", f"{amount}$"))
+            self.frame_13.setStyleSheet(color)
+            self.trade_entry.setText(_translate("Form", f"{entry}$"))
+            self.frame_14.setStyleSheet(color)
+
+            frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
+                state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
+
+            self.Trade_state_frame.setStyleSheet(f"{frame_state}"
+                                                 "background-color: transparent;")
+
+            self.input_exit_BS.setReadOnly(True)
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setStyleSheet("*{\n"
+                                             "font: 75 12pt \"Bahnschrift\";\n"
+                                             "color: rgb(0, 0, 0);\n"
+                                             "}\n"
+                                             "QLineEdit{\n"
+                                             "border-radius:8px;\n"
+                                             "background: rgb(100, 100, 100);\n"
+                                             "}")
+
+            # -----------------------------------------------
+
+            self.down_bar_label.setText(_translate("Form",
+                                                   f"Data Storage Size : {file_size('database.db')}                "
+                                                   f"                  Trade open since : {date}                   "
+                                                   f"                        "
+                                                   "                                                    "
+                                                   "                         "
+                                                   "                                                    "
+                                                   "                         "
+                                                   "                                                    "
+                                                   f"              {current_time()} "))
+
+        else:
+            self.checkBox_opentrade.setChecked(False)
+            color = "background: rgb(0, 0, 0);"
+
+            self.trade_date.setText(_translate("Form", ""))
+            self.frame_12.setStyleSheet(color)
+            self.trade_amount.setText(_translate("Form", ""))
+            self.frame_13.setStyleSheet(color)
+            self.trade_entry.setText(_translate("Form", ""))
+            self.frame_14.setStyleSheet(color)
+
+            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                 "background-color: transparent;")
+
+            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                 "background-color: transparent;")
+
+            self.input_exit_BS.setReadOnly(False)
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setStyleSheet("*{\n"
+                                             "font: 75 12pt \"Bahnschrift\";\n"
+                                             "color: rgb(0, 0, 0);\n"
+                                             "}\n"
+                                             "QLineEdit{\n"
+                                             "border-radius:8px;\n"
+                                             "background: rgb(240, 240, 240);\n"
+                                             "}")
+            # =======
+            self.down_bar_label.setText(_translate("Form",
+                                                   f"Data Storage Size : {file_size('database.db')}                "
+                                                   f"                  Trade closed :                              "
+                                                   f"                        "
+                                                   "                                                    "
+                                                   "                         "
+                                                   "                                                    "
+                                                   "                         "
+                                                   "                                                    "
+                                                   f"                   {current_time()} "))
+
+    def journal_buy(self):
+        global old_btc_price
+        _translate = QtCore.QCoreApplication.translate
+        try:
+
+            state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentradeplus")[1])
+
+            amount = state["amount"]
+            entry = state["entry"]
+            exit_ = state["exit"]
+            date = state["date"]
+
+            if amount == 0 and entry == 0 and exit_ == 0 and date == 0:
+                amount = str(self.input_amount_BS_3.text())
+                entry = str(self.input_entry_BS.text())
+                exit_ = str(self.input_exit_BS.text())
+
+                date = datetime.date.today()
+                month = date.month
+                year = date.year
+            else:
+                data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+                Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+                month, day, year = str(date).split("-")
+
+            result = ((float(exit_) - float(entry)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
+
+            _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
+
+            Table(f'Journal_{identity}').create()
+
+            count = len(Extract(f"Journal_{identity}").fetchall())
+
+            Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
+                    date=str(date), amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    result=_result).insert()
+
+            # ---------------------------------------
+            self.input_amount_BS_3.setText(_translate("MyAPP", ""))
+            self.input_entry_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+
+        except Exception as e:
+            print("journal buy ", e)
+
+    def journal_sell(self):
+        global old_btc_price
+        _translate = QtCore.QCoreApplication.translate
+        try:
+
+            state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentradeplus")[1])
+
+            amount = state["amount"]
+            entry = state["entry"]
+            exit_ = state["exit"]
+            date = state["date"]
+
+            if amount == 0 and entry == 0 and exit_ == 0 and date == 0:
+                amount = str(self.input_amount_BS_3.text())
+                entry = str(self.input_entry_BS.text())
+                exit_ = str(self.input_exit_BS.text())
+
+                date = datetime.date.today()
+                month = date.month
+                year = date.year
+            else:
+                data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+                Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+                month, day, year = str(date).split("-")
+
+            result = ((float(entry) - float(exit_)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
+
+            _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
+
+            Table(f'Journal_{identity}').create()
+            print("done yaya")
+            count = len(Extract(f"Journal_{identity}").fetchall())
+
+            Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
+                    date=str(date), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    result=_result).insert()
+
+            # ---------------------------------------
+            self.input_amount_BS_3.setText(_translate("MyAPP", ""))
+            self.input_entry_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+
+        except Exception as e:
+            print("journal sell ", e)
+
+    def update(self):
         global old_btc_price
         _translate = QtCore.QCoreApplication.translate
         btc_price = API().btc()
 
+        print(btc_price)
         if btc_price is not None:
             updated_btc_price = btc_price[1]
             str_btc_price = btc_price[0]
@@ -148,6 +339,29 @@ class Ui_Form(object):
                 self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
             old_btc_price = updated_btc_price
 
+        Table(f"Prevalues_{identity}").create()
+        if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+            value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+            currency_price = value["currency_Price"]
+
+            if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
+
+                input_wallet = input_wallet[1]
+
+                xusd = round(((float(input_wallet) * 0.00000001) * old_btc_price), 1)
+                usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
+
+                xcurrency = round(float(currency_price) * xusd, 1)
+                currency = str(f"{int(xcurrency):,d}") + "." + \
+                           str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
+
+                self.wallet_S_label.setText(
+                    _translate("Form", f"{self.zero_remover(usd)} $"))
+                self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
+        else:
+            pass
+
     def user_wallet(self):  # wallet
         global old_btc_price
         global identity
@@ -156,22 +370,21 @@ class Ui_Form(object):
             input_wallet = str(self.input_wallet_balance.text())
             now = datetime.datetime.now()
             _btc_ = old_btc_price
-            pass_0 = False
             currency_ = "SGD"
-            pass_ = False
             currency_price = 0
             if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
                 value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
                 currency_price = value["currency_Price"]
                 currency_ = value["currency"]
                 time_pass = value["time"]
-                pass_ = True if time_pass != now else False
+                pass_ = True if time_pass != now.day else False
+                pass_0 = False
             else:
                 pass_ = True
                 pass_0 = True
 
-            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText()) if pass_0 else \
-                API.currency_exchange(currency_) if not pass_ else currency_price
+            currency_price = API.currency_exchange(self.comboBox_currency.currentText()) if pass_0 else \
+                API.currency_exchange(currency_) if pass_ else currency_price
 
             if _btc_ is not None:
                 if input_wallet != "":
@@ -182,35 +395,38 @@ class Ui_Form(object):
                     else:
                         Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).update()
 
-                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
-                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 2)).split(".")[1]
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
+                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
 
-                    xcurrency = round(float(currency_price) * xusd, 2)
+                    xcurrency = round(float(currency_price) * xusd, 1)
                     currency = str(f"{int(xcurrency):,d}") + "." + \
-                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+                               str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
 
-                    btc_ = round((float(input_wallet) * 0.00000001), 4)
+                    btc_ = round((float(input_wallet) * 0.00000001), 5)
 
                     self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
                     self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
-                    self.wallet_S_label.setText(_translate("Form", f"{usd} $"))
-                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+                    self.wallet_S_label.setText(
+                        _translate("Form", f"{self.zero_remover(usd)} $"))
+                    self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
 
                     if pass_:
+                        data = {"currency_Price": currency_price,
+                                "currency": self.comboBox_currency.currentText(), "time": now.day}
 
                         if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-                            data = {"currency_Price": currency_price,
-                                    "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                             Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
                         else:
-                            data = {"currency_Price": currency_price,
-                                    "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                             Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
             else:
                 pass
 
-        except Exception:
-            pass
+        except Exception as e:
+            print("user wallet ", e)
+
+    @staticmethod
+    def zero_remover(value):
+        return value if str(value).split('.')[1] != '0' else str(value).split('.')[0]
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
@@ -312,7 +528,7 @@ class Ui_Form(object):
         self.TABLE_Widget.viewport().setProperty("cursor", QtGui.QCursor(QtCore.Qt.ArrowCursor))
         self.TABLE_Widget.setAutoFillBackground(False)
         self.TABLE_Widget.setStyleSheet("*{\n"
-                                        "font: 75 14pt \"Bahnschrift\";\n"
+                                        "font: 14pt \"Bahnschrift\";\n"
                                         "    background-color: rgb(200, 200, 200);\n"
                                         "\n"
                                         "    \n"
@@ -638,6 +854,8 @@ class Ui_Form(object):
         icon1.addPixmap(QtGui.QPixmap(":/images/Images/sell__.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.btn_SELL.setIcon(icon1)
         self.btn_SELL.setObjectName("btn_SELL")
+        self.btn_SELL.clicked.connect(self.calc_openTradeSELL)
+
         self.btn_BUY = QtWidgets.QPushButton(self.frame_5)
         self.btn_BUY.setGeometry(QtCore.QRect(190, 700, 101, 31))
         self.btn_BUY.setStyleSheet("\n"
@@ -681,12 +899,11 @@ class Ui_Form(object):
         icon2.addPixmap(QtGui.QPixmap(":/images/Images/buy__.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.btn_BUY.setIcon(icon2)
         self.btn_BUY.setObjectName("btn_BUY")
+        self.btn_BUY.clicked.connect(self.calc_openTradeBUY)
+
         self.frame_14 = QtWidgets.QFrame(self.frame_5)
         self.frame_14.setGeometry(QtCore.QRect(0, 500, 301, 41))
-        self.frame_14.setStyleSheet("\n"
-                                    "background: rgb(44, 44,44);\n"
-                                    "\n"
-                                    "background: rgba(0, 255, 0,100);")
+
         self.frame_14.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_14.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_14.setObjectName("frame_14")
@@ -705,10 +922,7 @@ class Ui_Form(object):
         self.label_44.setObjectName("label_44")
         self.frame_13 = QtWidgets.QFrame(self.frame_5)
         self.frame_13.setGeometry(QtCore.QRect(0, 420, 301, 41))
-        self.frame_13.setStyleSheet("\n"
-                                    "background: rgb(44, 44,44);\n"
-                                    "\n"
-                                    "background: rgba(0, 255, 0,100);")
+
         self.frame_13.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_13.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_13.setObjectName("frame_13")
@@ -728,22 +942,18 @@ class Ui_Form(object):
         self.label_42.setObjectName("label_42")
         self.frame_12 = QtWidgets.QFrame(self.frame_5)
         self.frame_12.setGeometry(QtCore.QRect(0, 340, 301, 41))
-        self.frame_12.setStyleSheet("\n"
-                                    "background: rgb(44, 44,44);\n"
-                                    "background: rgba(255, 0, 0,100);\n"
-                                    "background: rgba(0, 255, 0,100);\n"
-                                    "")
+
         self.frame_12.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_12.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_12.setObjectName("frame_12")
         self.trade_date = QtWidgets.QLabel(self.frame_12)
         self.trade_date.setGeometry(QtCore.QRect(170, 0, 121, 41))
-        self.trade_date.setStyleSheet("font: bold 10pt \"Courier\";\n"
-                                      "color: rgb(211, 211, 211);\n"
-                                      "background: transparent;")
         self.trade_date.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.trade_date.setFrameShadow(QtWidgets.QFrame.Plain)
         self.trade_date.setLineWidth(1)
+        self.trade_date.setStyleSheet("font: bold 10pt \"Courier\";\n"
+                                      "color: rgb(211, 211, 211);\n"
+                                      "background: transparent;")
         self.trade_date.setAlignment(QtCore.Qt.AlignCenter)
         self.trade_date.setObjectName("trade_date")
         self.label_40 = QtWidgets.QLabel(self.frame_12)
@@ -754,11 +964,6 @@ class Ui_Form(object):
         self.label_40.setObjectName("label_40")
         self.Trade_state_frame = QtWidgets.QFrame(self.frame_5)
         self.Trade_state_frame.setGeometry(QtCore.QRect(100, 230, 101, 91))
-        self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/open_sign_sell.png);\n"
-                                             "background-image: url(:/images/Images/close_sign.png);\n"
-                                             "background-image: url(:/images/Images/open_sign_buy.png);\n"
-                                             "\n"
-                                             "background-color: transparent;")
         self.Trade_state_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.Trade_state_frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.Trade_state_frame.setObjectName("Trade_state_frame")
@@ -964,6 +1169,8 @@ class Ui_Form(object):
         self.checkBox_opentrade.setAutoRepeat(False)
         self.checkBox_opentrade.setTristate(False)
         self.checkBox_opentrade.setObjectName("checkBox_opentrade")
+        self.checkBox_opentrade.stateChanged.connect(self.open_trade_combo)
+
         self.wallet_btn = QtWidgets.QPushButton(self.frame_5)
         self.wallet_btn.setGeometry(QtCore.QRect(170, 104, 28, 28))
         self.wallet_btn.setStyleSheet("\n"
@@ -2866,8 +3073,6 @@ class Ui_Form(object):
         self.image_label.setAcceptDrops(False)
         self.image_label.setAutoFillBackground(False)
         # ------------
-        # f"background-image: url(Images/user_image.{image_format});\n"
-        # image_format = database / if image_format is not False
         image_format = self.pre_profile()
 
         if len(image_format) != 0:
@@ -2879,7 +3084,7 @@ class Ui_Form(object):
         # ------------
         self.image_label.setStyleSheet("border-radius:50px;\n"
                                        "\n"
-                                       "background-color: rgb(150, 150, 150);\n"
+                                       "background-color: rgb(10, 10, 10);\n"
                                        "\n"
                                        f"{image_url}"
                                        "background-repeat: no-repeat; "
@@ -3125,9 +3330,9 @@ class Ui_Form(object):
                                            "background: transparent;")
         self.wallet_SS_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignTrailing | QtCore.Qt.AlignVCenter)
         self.wallet_SS_label.setObjectName("wallet_SS_label")
-        self.comboBox1_historical_data_2 = QtWidgets.QComboBox(self.frame_19)
-        self.comboBox1_historical_data_2.setGeometry(QtCore.QRect(220, 16, 61, 22))
-        self.comboBox1_historical_data_2.setStyleSheet(
+        self.comboBox_currency = QtWidgets.QComboBox(self.frame_19)
+        self.comboBox_currency.setGeometry(QtCore.QRect(220, 16, 61, 22))
+        self.comboBox_currency.setStyleSheet(
             "color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0.373134 rgba(255, 255, 255, 255));\n"
             "\n"
             "selection-background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0.097, stop:0.771144 rgba("
@@ -3135,12 +3340,12 @@ class Ui_Form(object):
             "color: rgb(211, 211, 211);\n"
             "background:transparent;\n"
             "font: 11pt \"Bahnschrift\";")
-        self.comboBox1_historical_data_2.setObjectName("comboBox1_historical_data_2")
-        self.comboBox1_historical_data_2.addItem("")
-        self.comboBox1_historical_data_2.addItem("")
-        self.comboBox1_historical_data_2.addItem("")
-        self.comboBox1_historical_data_2.addItem("")
-        self.comboBox1_historical_data_2.currentIndexChanged.connect(self.currency_combo)
+        self.comboBox_currency.setObjectName("comboBox_currency")
+        self.comboBox_currency.addItem("")
+        self.comboBox_currency.addItem("")
+        self.comboBox_currency.addItem("")
+        self.comboBox_currency.addItem("")
+        self.comboBox_currency.currentIndexChanged.connect(self.currency_combo)
         # =========================
 
         self.frame_22 = QtWidgets.QFrame(self.frame_4)
@@ -3200,8 +3405,10 @@ class Ui_Form(object):
         self.stackedWidget.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(Form)
         # ----------------------------------------
+        threading.Thread(target=lambda: Thread.every(10, self.update)).start()
         self.table()
         self.currency_combo_init()
+        self.opentrade_init()
 
         # =========================================
 
@@ -3216,13 +3423,11 @@ class Ui_Form(object):
                 currency_price = value["currency_Price"]
                 currency_ = value["currency"]
                 time_pass = value["time"]
-                pass_ = True if time_pass != now else False
-
+                pass_ = True if time_pass != now.day else False
                 a = 0
                 b = 1
                 cc = 2
                 d = 3
-
                 if currency_ == "SGD":
                     a = 0
                     b = 1
@@ -3235,7 +3440,7 @@ class Ui_Form(object):
                     d = 3
                 if currency_ == "EUR":
                     a = 1
-                    b = 1
+                    b = 2
                     cc = 0
                     d = 3
                 if currency_ == "MAD":
@@ -3243,18 +3448,18 @@ class Ui_Form(object):
                     b = 1
                     cc = 2
                     d = 0
-                self.comboBox1_historical_data_2.setItemText(a, _translate("Form", "SGD"))
-                self.comboBox1_historical_data_2.setItemText(b, _translate("Form", "CAD"))
-                self.comboBox1_historical_data_2.setItemText(cc, _translate("Form", "EUR"))
-                self.comboBox1_historical_data_2.setItemText(d, _translate("Form", "MAD"))
+                self.comboBox_currency.setItemText(a, _translate("Form", "SGD"))
+                self.comboBox_currency.setItemText(b, _translate("Form", "CAD"))
+                self.comboBox_currency.setItemText(cc, _translate("Form", "EUR"))
+                self.comboBox_currency.setItemText(d, _translate("Form", "MAD"))
             else:
                 pass_ = True
-                self.comboBox1_historical_data_2.setItemText(0, _translate("Form", "SGD"))
-                self.comboBox1_historical_data_2.setItemText(1, _translate("Form", "CAD"))
-                self.comboBox1_historical_data_2.setItemText(2, _translate("Form", "EUR"))
-                self.comboBox1_historical_data_2.setItemText(3, _translate("Form", "MAD"))
+                self.comboBox_currency.setItemText(0, _translate("Form", "SGD"))
+                self.comboBox_currency.setItemText(1, _translate("Form", "CAD"))
+                self.comboBox_currency.setItemText(2, _translate("Form", "EUR"))
+                self.comboBox_currency.setItemText(3, _translate("Form", "MAD"))
 
-            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText()) if pass_ else\
+            currency_price = API.currency_exchange(self.comboBox_currency.currentText()) if pass_ else \
                 currency_price
 
             if _btc_ is not None:
@@ -3264,39 +3469,44 @@ class Ui_Form(object):
 
                     input_wallet = input_wallet[1]
 
-                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
-                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 2)).split(".")[1]
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
+                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
 
-                    xcurrency = round(float(currency_price) * xusd, 2)
+                    xcurrency = round(float(currency_price) * xusd, 1)
                     currency = str(f"{int(xcurrency):,d}") + "." + \
-                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+                               str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
 
-                    btc_ = round((float(input_wallet) * 0.00000001), 4)
+                    btc_ = round((float(input_wallet) * 0.00000001), 5)
 
                     self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
                     self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
-                    self.wallet_S_label.setText(_translate("Form", f"{usd} $"))
-                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+                    self.wallet_S_label.setText(
+                        _translate("Form", f"{self.zero_remover(usd)} $"))
+                    self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
+                else:
+                    self.wallet_sato_label.setText(_translate("Form", "0 sat"))
+                    self.wallet_btc_label.setText(_translate("Form", "0 ₿"))
+                    self.wallet_S_label.setText(_translate("Form", "0 $"))
+                    self.wallet_SS_label.setText(_translate("Form", "0"))
 
                 if pass_:
+                    data = {"currency_Price": currency_price,
+                            "currency": self.comboBox_currency.currentText(), "time": now.day}
+
                     if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-                        data = {"currency_Price": currency_price,
-                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
                     else:
-                        data = {"currency_Price": currency_price,
-                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
 
-        except Exception:
-            pass
+        except Exception as e:
+            print("currency_combo_init ", e)
 
     def currency_combo(self):
         _translate = QtCore.QCoreApplication.translate
         _btc_ = old_btc_price
         now = datetime.datetime.now()
         try:
-            currency_price = API.currency_exchange(self.comboBox1_historical_data_2.currentText())
+            currency_price = API.currency_exchange(self.comboBox_currency.currentText())
 
             if _btc_ is not None:
                 Table(f"Prevalues_{identity}").create()
@@ -3304,29 +3514,28 @@ class Ui_Form(object):
                     input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
 
                     input_wallet = input_wallet[1]
-                    print("!!", input_wallet)
 
-                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 2)
+                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
 
-                    xcurrency = round(float(currency_price) * xusd, 2)
+                    xcurrency = round(float(currency_price) * xusd, 1)
                     currency = str(f"{int(xcurrency):,d}") + "." + \
-                               str(round(abs(xcurrency - int(xcurrency)), 2)).split(".")[1]
+                               str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
 
-                    self.wallet_SS_label.setText(_translate("Form", f"{currency}"))
+                    self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
+
+                    data = {"currency_Price": currency_price,
+                            "currency": self.comboBox_currency.currentText(), "time": now.day}
 
                     if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-                        data = {"currency_Price": currency_price,
-                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
                     else:
-                        data = {"currency_Price": currency_price,
-                                "currency": self.comboBox1_historical_data_2.currentText(), "time": now.date().day}
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
 
+                self.table()
             else:
                 pass
-        except Exception:
-            pass
+        except Exception as e:
+            print("currency_combo ", e)
 
     def pre_profile(self):
         files = []
@@ -3357,18 +3566,23 @@ class Ui_Form(object):
                                            "background-repeat: no-repeat; "
                                            "background-position: center;"
                                            "")
-        except AttributeError:
-            pass
-        except Exception:
-            pass
+        except AttributeError as e:
+            print("profile ", e)
+        except Exception as e:
+            print("profile ", e)
 
     def table(self):
+        btc_ = old_btc_price
+        if btc_ is not None:
+            pass
+        else:
+            btc_ = 0
         try:
-            if not Table('Journal').check:  # f'Journal_{identity}'
+            if not Table(f"Journal_{identity}").check:  # f'Journal_{identity}'
                 journal_data = []
                 pass
             else:
-                journal_data = Extract('Journal').fetchall()
+                journal_data = Extract(f"Journal_{identity}").fetchall()
 
             # ===========================================
             _translate = QtCore.QCoreApplication.translate
@@ -3390,19 +3604,24 @@ class Ui_Form(object):
             self.TABLE_Widget.setRowCount(len(journal_data))
 
             # =======================================
-            if Table(f'Pre_values_{identity}').check:
-                btc_ = Extract(f'Pre_values_{identity}').get_by_id(0)
-                currency = 0
-                currency_s = ""
+            if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+                currency_price = value["currency_Price"]
+                currency_s = value["currency"]
             else:
                 try:
-                    btc_ = API.btc()[1]
-                    currency = 0
-                    currency_s = "USD"
+                    currency_price = API.currency_exchange("SGD")
+                    currency_s = "SGD"
                 except Exception:
-                    btc_ = 0
-                    currency_s = ""
-                    currency = 0
+                    currency_price = 0
+                    currency_s = 0
+                    msg = QMessageBox()
+                    msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setText("conix Error")
+                    msg.setInformativeText('Something wrong restart your program and try again.')
+                    msg.setWindowTitle("wifi-Error")
+                    msg.exec_()
             k = 0
             for i in range(len(journal_data)):
                 result = float(journal_data[(len(journal_data) - 1) - k][7])
@@ -3424,6 +3643,9 @@ class Ui_Form(object):
                 self.TABLE_Widget.setItem(i, 4, item)
                 item = QtWidgets.QTableWidgetItem()
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
+                font = QtGui.QFont()
+                font.setPointSize(13)
+                item.setFont(font)
                 self.TABLE_Widget.setItem(i, 5, item)
                 # ===========================
                 item = self.TABLE_Widget.item(i, 0)
@@ -3431,18 +3653,26 @@ class Ui_Form(object):
                 item = self.TABLE_Widget.item(i, 1)
                 item.setText(_translate("MyAPP", f"{journal_data[(len(journal_data) - 1) - k][3]}"))
                 item = self.TABLE_Widget.item(i, 2)
-                item.setText(_translate("MyAPP", f"{journal_data[(len(journal_data) - 1) - k][4]} $"))
+                item.setText(_translate("MyAPP",
+                                        f"{journal_data[(len(journal_data) - 1) - k][4]} $"))
                 item = self.TABLE_Widget.item(i, 3)
-                item.setText(_translate("MyAPP", f"${journal_data[(len(journal_data) - 1) - k][5]}"))
+                item.setText(_translate("MyAPP",
+                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"))
                 item = self.TABLE_Widget.item(i, 4)
-                item.setText(_translate("MyAPP", f"${journal_data[(len(journal_data) - 1) - k][6]}"))
+                item.setText(_translate("MyAPP",
+                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][6])} $"))
                 item = self.TABLE_Widget.item(i, 5)
+                xusd = round(result * btc_, 1)
+                usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
+                curr = round(float(currency_price) * xusd, 1)
+                currency = str(f"{int(curr):,d}") + "." + \
+                           str(round(abs(curr - int(curr)), 1)).split(".")[1]
                 item.setText(
                     _translate("MyAPP",
                                f"{round(result, 5)}₿ ➨ "
-                               f"{round(result*btc_, 2)}$ "
-                               f"/ {round(result * currency, 2)}"
-                               f"{currency_s}"))
+                               f"{self.zero_remover(usd)} $ "
+                               f"| {self.zero_remover(currency)}"
+                               f" {currency_s}"))
                 # ===========================
                 if result >= 0:
                     brush = QtGui.QBrush(QtGui.QColor(3, 100, 64))
@@ -3456,14 +3686,389 @@ class Ui_Form(object):
         except Exception as e:
             print("table", e)
             pass
-            """msg = QMessageBox()
-            msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
-            msg.setIcon(QMessageBox.Warning)
-            msg.setText("Program Error")
-            msg.setInformativeText('Something wrong restart your program and try again.')
-            msg.setWindowTitle("Program-Error")
-            msg.exec_()"""
 
+    def open_trade_combo(self):
+        _translate = QtCore.QCoreApplication.translate
+        if self.checkBox_opentrade.isChecked():
+            self.input_exit_BS.setReadOnly(True)
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setStyleSheet("*{\n"
+                                             "font: 75 12pt \"Bahnschrift\";\n"
+                                             "color: rgb(0, 0, 0);\n"
+                                             "}\n"
+                                             "QLineEdit{\n"
+                                             "border-radius:8px;\n"
+                                             "background: rgb(100, 100, 100);\n"
+                                             "}")
+
+            frame_state = "background-image: url(Images/open-sign-black.png);"
+            self.Trade_state_frame.setStyleSheet(f"{frame_state}"
+                                                 "background-color: transparent;")
+
+            color = "background: rgb(100, 100, 100);"
+
+            self.frame_12.setStyleSheet(color)
+            self.frame_13.setStyleSheet(color)
+            self.frame_14.setStyleSheet(color)
+
+        else:
+            self.input_exit_BS.setReadOnly(False)
+            self.input_exit_BS.setText(_translate("MyAPP", ""))
+            self.input_exit_BS.setStyleSheet("*{\n"
+                                             "font: 75 12pt \"Bahnschrift\";\n"
+                                             "color: rgb(0, 0, 0);\n"
+                                             "}\n"
+                                             "QLineEdit{\n"
+                                             "border-radius:8px;\n"
+                                             "background: rgb(240, 240, 240);\n"
+                                             "}")
+            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                 "background-color: transparent;")
+
+            color = "background: rgb(0, 0, 0);"
+
+            self.frame_12.setStyleSheet(color)
+            self.frame_13.setStyleSheet(color)
+            self.frame_14.setStyleSheet(color)
+
+    def calc_openTradeBUY(self):  # open the trade buy calculator
+        _translate = QtCore.QCoreApplication.translate
+        if self.checkBox_opentrade.isChecked():
+            try:
+                amount = float(self.input_amount_BS_3.text())
+                entry = float(self.input_entry_BS.text())
+
+                self.checkBox_opentrade.setEnabled(False)
+                date = datetime.date.today()
+                month = date.month
+                day = date.day
+                year = date.year
+
+                open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+
+                state_ = open_data["state"]
+
+                if state_ == "closed":
+
+                    data = {"date": date, "amount": amount,
+                            "entry": entry, "state": "BUY"}
+
+                    Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+                    data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+                    Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                elif state_ == "BUY":
+
+                    date_str_ = open_data["date"]
+                    amount_ = float(open_data["amount"])
+                    entry_ = float(open_data["entry"])
+                    x_amount = amount_ + amount
+                    x_entry = ((amount_ * entry_) + (amount * entry)) / x_amount
+
+                    data = {"date": date_str_, "amount": x_amount,
+
+                            "entry": round(x_entry, 1), "state": "BUY"}
+
+                    Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                elif state_ == "SELL":
+
+                    date_str_ = open_data["date"]
+                    amount_ = float(open_data["amount"])
+                    entry_ = float(open_data["entry"])
+                    x_amount = amount_ - amount
+
+                    if x_amount > 0:
+
+                        data = {"date": date_str_, "amount": x_amount,
+
+                                "entry": entry_, "state": "SELL"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+
+                    elif x_amount < 0:
+
+                        data = {"date": date, "amount": abs(x_amount),
+
+                                "entry": entry, "state": "BUY"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": date_str_, "amount": amount_, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+
+                    elif x_amount == 0:
+
+                        data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+                        self.checkBox_opentrade.setChecked(False)
+                        self.checkBox_opentrade.setEnabled(True)
+                        self.input_exit_BS.setReadOnly(False)
+
+                        data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])["state"]
+
+                if state != "closed":
+
+                    open_data_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+
+                    amount = open_data_["amount"]
+                    entry = open_data_["entry"]
+                    date = open_data_["date"]
+
+                    color = "background: rgb(191, 0, 0);" if state == "SELL" else \
+                        "background: rgb(0, 132, 0);"
+
+                    self.trade_date.setText(_translate("Form", f"{date}"))
+                    self.frame_12.setStyleSheet(color)
+                    self.trade_amount.setText(_translate("Form", f"{amount}$"))
+                    self.frame_13.setStyleSheet(color)
+                    self.trade_entry.setText(_translate("Form", f"{entry}$"))
+                    self.frame_14.setStyleSheet(color)
+
+                    frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
+                        state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
+
+                    self.Trade_state_frame.setStyleSheet(f"{frame_state}"
+                                                         "background-color: transparent;")
+
+                    self.down_bar_label.setText(_translate("Form",
+                                                           f"Data Storage Size : {file_size('database.db')}           "
+                                                           f"     "
+                                                           f"                  Trade open since : {date}              "
+                                                           f"     "
+                                                           f"                        "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           f"              {current_time()} "))
+
+                else:
+                    color = "background: rgb(0, 0, 0);"
+
+                    self.trade_date.setText(_translate("Form", ""))
+                    self.frame_12.setStyleSheet(color)
+                    self.trade_amount.setText(_translate("Form", ""))
+                    self.frame_13.setStyleSheet(color)
+                    self.trade_entry.setText(_translate("Form", ""))
+                    self.frame_14.setStyleSheet(color)
+                    self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                         "background-color: transparent;")
+
+                    self.down_bar_label.setText(_translate("Form",
+                                                           f"Data Storage Size : {file_size('database.db')}      "
+                                                           f"          "
+                                                           f"                  Trade closed :                      "
+                                                           f"        "
+                                                           f"                        "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           f"                   {current_time()} "))
+
+                self.input_amount_BS_3.setText(_translate("MyAPP", ""))
+                self.input_entry_BS.setText(_translate("MyAPP", ""))
+
+            except Exception as e:
+                print("open buy ", e)
+        else:
+            self.journal_buy()
+            self.table()
+
+    def calc_openTradeSELL(self):
+        _translate = QtCore.QCoreApplication.translate
+        if self.checkBox_opentrade.isChecked():
+            try:
+                amount = float(self.input_amount_BS_3.text())
+                entry = float(self.input_entry_BS.text())
+
+                self.checkBox_opentrade.setEnabled(False)
+                date = datetime.date.today()
+                month = date.month
+                day = date.day
+                year = date.year
+
+                open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+
+                state_ = open_data["state"]
+
+                if state_ == "closed":
+
+                    data = {"date": date, "amount": amount,
+                            "entry": entry, "state": "SELL"}
+
+                    Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+                    data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+                    Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                elif state_ == "SELL":
+
+                    date_str_ = open_data["date"]
+                    amount_ = float(open_data["amount"])
+                    entry_ = float(open_data["entry"])
+                    x_amount = amount_ + amount
+                    x_entry = ((amount_ * entry_) + (amount * entry)) / x_amount
+
+                    data = {"date": date_str_, "amount": x_amount,
+
+                            "entry": round(x_entry, 1), "state": "SELL"}
+
+                    Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                elif state_ == "BUY":
+
+                    date_str_ = open_data["date"]
+                    amount_ = float(open_data["amount"])
+                    entry_ = float(open_data["entry"])
+                    x_amount = amount_ - amount
+
+                    if x_amount > 0:
+
+                        data = {"date": date_str_, "amount": x_amount,
+
+                                "entry": entry_, "state": "BUY"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+
+                    elif x_amount < 0:
+
+                        data = {"date": date, "amount": abs(x_amount),
+
+                                "entry": entry, "state": "SELL"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": date_str_, "amount": amount_, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+
+                    elif x_amount == 0:
+
+                        data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                        self.journal_sell()
+                        self.table()
+                        self.checkBox_opentrade.setChecked(False)
+                        self.checkBox_opentrade.setEnabled(True)
+                        self.input_exit_BS.setReadOnly(False)
+
+                        data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
+
+                        Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
+
+                        data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+
+                        Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
+
+                state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])["state"]
+
+                if state != "closed":
+
+                    open_data_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+
+                    amount = open_data_["amount"]
+                    entry = open_data_["entry"]
+                    date = open_data_["date"]
+
+                    color = "background: rgb(191, 0, 0);" if state == "SELL" else \
+                        "background: rgb(0, 132, 0);"
+
+                    self.trade_date.setText(_translate("Form", f"{date}"))
+                    self.frame_12.setStyleSheet(color)
+                    self.trade_amount.setText(_translate("Form", f"{amount}$"))
+                    self.frame_13.setStyleSheet(color)
+                    self.trade_entry.setText(_translate("Form", f"{entry}$"))
+                    self.frame_14.setStyleSheet(color)
+                    frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
+                        state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
+
+                    self.Trade_state_frame.setStyleSheet(f"{frame_state}"
+                                                         "background-color: transparent;")
+
+                    self.down_bar_label.setText(_translate("Form",
+                                                           f"Data Storage Size : {file_size('database.db')}         "
+                                                           f"       "
+                                                           f"                  Trade open since : {date}             "
+                                                           f"      "
+                                                           f"                        "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           f"              {current_time()} "))
+
+                else:
+                    color = "background: rgb(0, 0, 0);"
+
+                    self.trade_date.setText(_translate("Form", ""))
+                    self.frame_12.setStyleSheet(color)
+                    self.trade_amount.setText(_translate("Form", ""))
+                    self.frame_13.setStyleSheet(color)
+                    self.trade_entry.setText(_translate("Form", ""))
+                    self.frame_14.setStyleSheet(color)
+                    self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                         "background-color: transparent;")
+
+                    self.down_bar_label.setText(_translate("Form",
+                                                           f"Data Storage Size : {file_size('database.db')}      "
+                                                           f"          "
+                                                           f"                  Trade closed :                     "
+                                                           f"         "
+                                                           f"                        "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           "                         "
+                                                           "                                                    "
+                                                           f"                   {current_time()} "))
+
+                self.input_amount_BS_3.setText(_translate("MyAPP", ""))
+                self.input_entry_BS.setText(_translate("MyAPP", ""))
+
+            except Exception as e:
+                print("open sell ", e)
+        else:
+            self.journal_sell()
+            self.table()
 
     def retranslateUi(self, Form):
         _translate = QtCore.QCoreApplication.translate
@@ -3479,11 +4084,8 @@ class Ui_Form(object):
         self.label_38.setText(_translate("Form", "MIN Loss"))
         self.btn_SELL.setText(_translate("Form", "▼ SELL"))
         self.btn_BUY.setText(_translate("Form", "▲ BUY"))
-        self.trade_entry.setText(_translate("Form", "10,234$"))
         self.label_44.setText(_translate("Form", "Entry"))
-        self.trade_amount.setText(_translate("Form", "1,234$"))
         self.label_42.setText(_translate("Form", "Amount"))
-        self.trade_date.setText(_translate("Form", "14-09-2019"))
         self.label_40.setText(_translate("Form", "Date"))
         self.input_delete.setPlaceholderText(_translate("Form", "ID "))
         self.label_16.setText(_translate("Form", " Delete:"))
@@ -3638,14 +4240,6 @@ class Ui_Form(object):
         self.checkBox.setText(_translate("Form", "Risk in Satochi"))
         self.checkBox_2.setText(_translate("Form", "Risk in Percentage"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_5), _translate("Form", "Calculator      Features"))
-        self.down_bar_label.setText(_translate("Form",
-                                               f"Data Storage Size : {file_size('database.db')}              "
-                                               "                  Trade open "
-                                               "since : 10/09/2019 | 5:09 PM                                          "
-                                               "                                                                      "
-                                               "                                                                      "
-                                               "                                                 "
-                                               f"              {current_time()} "))
         self.label_10.setText(_translate("Form", "Rate"))
         self.label_8.setText(_translate("Form", "Wins"))
         self.label_7.setText(_translate("Form", "losses"))
@@ -3659,10 +4253,6 @@ class Ui_Form(object):
         self.label_22.setText(_translate("Form", "Total Wins"))
         self.label_23.setText(_translate("Form", "Total Losses"))
         self.profile_total_losses_label.setText(_translate("Form", "+0.12304₿"))
-        self.wallet_sato_label.setText(_translate("Form", "0 sat"))
-        self.wallet_btc_label.setText(_translate("Form", "0 ₿"))
-        self.wallet_S_label.setText(_translate("Form", "0 $"))
-        self.wallet_SS_label.setText(_translate("Form", "0"))
         self.label_11.setText(_translate("Form", "BTC PRICE"))
         self.btc_price.setText(_translate("Form", f"{API.btc()[0].split('.')[0]}$"))
 
