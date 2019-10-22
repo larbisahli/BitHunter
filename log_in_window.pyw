@@ -287,7 +287,7 @@ class Ui_Form(object):
 
         username = str(self.input_signin_username.text())
         password = str(self.input_signin_password.text())
-        current_user = {"identity": hash_(username+password)}
+        current_user = {"identity": hash_(username+password), "username": username}
         import pickle
         with open("current_access.txt", "wb") as w:
             pickle.dump(current_user, w)

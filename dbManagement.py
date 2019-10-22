@@ -134,10 +134,11 @@ class Journal:
         try:
             lock.acquire(True)
             with conn:
-                c.execute(f"INSERT INTO {self.name} VALUES (:id, :month, :year, :date, :amount, :entry, :exit, :result)",
-                          {"id": self.id_, 'month': self.month, 'year': self.year, 'date': self.date,
-                           "amount": self.amount, "entry": self.entry, "exit": self.exit_, "result": self.result})
-        except sqlite3.Error:
+                c.execute(f"INSERT INTO {self.name} VALUES (:id, :month, :year, :date, :amount, :entry, :exit, :result)"
+                          , {"id": self.id_, 'month': self.month, 'year': self.year, 'date': self.date,
+                             "amount": self.amount, "entry": self.entry, "exit": self.exit_, "result": self.result})
+        except sqlite3.Error as e:
+            print("sql", e)
             pass
         finally:
             lock.release()
@@ -155,10 +156,20 @@ class Journal:
         finally:
             lock.release()
 
+    def update_one(self, value):
+        try:
+            lock.acquire(True)
+            with conn:
+                c.execute(f"""UPDATE {self.name} SET id = :id_ WHERE id = :id""", {"id": self.id_, "id_": value})
+        except sqlite3.Error:
+            pass
+        finally:
+            lock.release()
+
 
 class Notes:
 
-    def __init__(self, name,title, date, note):
+    def __init__(self, name, title, date, note):
         self.title = title
         self.date = date
         self.note = note
@@ -312,12 +323,7 @@ c = conn.cursor()
 api = conn.cursor()
 lock = threading.Lock()
 
-#print(len(Extract(f"Prevalues_{12}").fetchall()))
 
-"""
-the .api is the cursor for updates, this is to prevent any 
-Recursive use of cursors while using other tables at the same 
-time as the update happened."""
 """
 ====Tables and cursor====
  table-1: journal .c => rate_N .c  [x for x in a if x < 0 ] -  and sum()

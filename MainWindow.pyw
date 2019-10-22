@@ -37,6 +37,7 @@ with open("current_access.txt", "rb") as r:
     dictionary = pickle.load(r)
 
 identity = dictionary["identity"]
+username = dictionary["username"]
 
 
 def convert_bytes(num):
@@ -57,7 +58,7 @@ def file_size(file_path):
         file_info = os.stat(file_path)
         return convert_bytes(file_info.st_size)
 
-
+"""
 class API:
 
     @staticmethod
@@ -98,6 +99,16 @@ class API:
             return None
         return float(response.text)
 
+"""
+
+class API:
+    @staticmethod
+    def btc():
+        return "8,342.4", 8342.4
+
+    @staticmethod
+    def currency_exchange(currency):
+        return 1.324
 
 try:
     old_btc_price = API().btc()[1]
@@ -243,10 +254,13 @@ class Ui_Form(object):
                 date = datetime.date.today()
                 month = date.month
                 year = date.year
+                day = date.day
+                date_ = f"{month}-{day}-{year}"
             else:
                 data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
                 Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
                 month, day, year = str(date).split("-")
+                date_ = f"{month}-{day}-{year}"
 
             result = ((float(exit_) - float(entry)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
 
@@ -257,7 +271,7 @@ class Ui_Form(object):
             count = len(Extract(f"Journal_{identity}").fetchall())
 
             Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
-                    date=str(date), amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    date=date_, amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
                     result=_result).insert()
 
             # ---------------------------------------
@@ -288,21 +302,24 @@ class Ui_Form(object):
                 date = datetime.date.today()
                 month = date.month
                 year = date.year
+                day = date.day
+                date_ = f"{month}-{day}-{year}"
             else:
                 data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
                 Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
                 month, day, year = str(date).split("-")
+                date_ = f"{month}-{day}-{year}"
 
             result = ((float(entry) - float(exit_)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
 
             _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
 
             Table(f'Journal_{identity}').create()
-            print("done yaya")
+
             count = len(Extract(f"Journal_{identity}").fetchall())
 
             Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
-                    date=str(date), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    date=str(date_), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
                     result=_result).insert()
 
             # ---------------------------------------
@@ -426,7 +443,34 @@ class Ui_Form(object):
 
     @staticmethod
     def zero_remover(value):
-        return value if str(value).split('.')[1] != '0' else str(value).split('.')[0]
+        if len(str(value).split('.')) >= 2:
+            return value if str(value).split('.')[1] != '0' else str(value).split('.')[0]
+        else:
+            return value
+
+    def zero_remover_amount(self, amount):
+        sign, value = amount.split(" ")
+        return f"{sign} {self.zero_remover(value)}"
+
+    @staticmethod
+    def small_value(value):
+        pass_ = str(value).split("-")
+        if pass_[0] != "":
+            if len(str(value).split("-")) >= 2:
+                zero = ""
+                for i in range(int(pass_[1])):
+                    zero += "0"
+                return f"0.{zero}{pass_[0].split('e')[0]}"
+            else:
+                return value
+        else:
+            if len(pass_[1].split("e")) >= 2:
+                zero = ""
+                for i in range(int(pass_[2])):
+                    zero += "0"
+                return f"-0.{zero}{pass_[1].split('e')[0]}"
+            else:
+                return value
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
@@ -659,7 +703,8 @@ class Ui_Form(object):
         self.frame_8.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_8.setObjectName("frame_8")
         self.max_gain_1_label = QtWidgets.QLabel(self.frame_8)
-        self.max_gain_1_label.setGeometry(QtCore.QRect(120, 0, 111, 35))
+        self.max_gain_1_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.max_gain_1_label.setGeometry(QtCore.QRect(100, 0, 141, 35))
         self.max_gain_1_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                             "color: rgb(0, 132, 0);\n"
                                             "background: transparent;")
@@ -677,7 +722,8 @@ class Ui_Form(object):
         self.frame_9.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_9.setObjectName("frame_9")
         self.min_gain_1_label = QtWidgets.QLabel(self.frame_9)
-        self.min_gain_1_label.setGeometry(QtCore.QRect(130, 0, 111, 35))
+        self.min_gain_1_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.min_gain_1_label.setGeometry(QtCore.QRect(100, 0, 141, 35))
         self.min_gain_1_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                             "color: rgb(0, 132, 0);\n"
                                             "background: transparent;")
@@ -695,7 +741,8 @@ class Ui_Form(object):
         self.frame_10.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_10.setObjectName("frame_10")
         self.max_loss_1_label = QtWidgets.QLabel(self.frame_10)
-        self.max_loss_1_label.setGeometry(QtCore.QRect(140, 0, 111, 35))
+        self.max_loss_1_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.max_loss_1_label.setGeometry(QtCore.QRect(100, 0, 141, 35))
         self.max_loss_1_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                             "color: rgb(191, 0, 0);\n"
                                             "background: transparent;")
@@ -713,7 +760,8 @@ class Ui_Form(object):
         self.frame_11.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_11.setObjectName("frame_11")
         self.min_loss_1_label = QtWidgets.QLabel(self.frame_11)
-        self.min_loss_1_label.setGeometry(QtCore.QRect(130, 0, 111, 35))
+        self.min_loss_1_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.min_loss_1_label.setGeometry(QtCore.QRect(100, 0, 141, 35))
         self.min_loss_1_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                             "color: rgb(191, 0, 0);\n"
                                             "background: transparent;")
@@ -980,6 +1028,7 @@ class Ui_Form(object):
         self.input_delete.setText("")
         self.input_delete.setAlignment(QtCore.Qt.AlignCenter)
         self.input_delete.setObjectName("input_delete")
+        self.input_delete.returnPressed.connect(self.delete)
         self.label_16 = QtWidgets.QLabel(self.frame_5)
         self.label_16.setGeometry(QtCore.QRect(20, 140, 52, 24))
         self.label_16.setStyleSheet("")
@@ -1106,6 +1155,7 @@ class Ui_Form(object):
         icon3.addPixmap(QtGui.QPixmap(":/images/Images/buy__.png"), QtGui.QIcon.Active, QtGui.QIcon.On)
         self.btn_BUY_modify.setIcon(icon3)
         self.btn_BUY_modify.setObjectName("btn_BUY_modify")
+        self.btn_BUY_modify.clicked.connect(self.modify_buy)
         self.btn_SELL_modify = QtWidgets.QPushButton(self.frame_5)
         self.btn_SELL_modify.setGeometry(QtCore.QRect(230, 60, 61, 31))
         self.btn_SELL_modify.setStyleSheet("\n"
@@ -1146,6 +1196,7 @@ class Ui_Form(object):
         self.btn_SELL_modify.setText("")
         self.btn_SELL_modify.setIcon(icon1)
         self.btn_SELL_modify.setObjectName("btn_SELL_modify")
+        self.btn_SELL_modify.clicked.connect(self.modify_sell)
         self.label_32 = QtWidgets.QLabel(self.frame_5)
         self.label_32.setGeometry(QtCore.QRect(20, 620, 71, 32))
         self.label_32.setStyleSheet("")
@@ -1229,6 +1280,7 @@ class Ui_Form(object):
                                       "}")
         self.delete_btn.setText("")
         self.delete_btn.setObjectName("delete_btn")
+        self.delete_btn.clicked.connect(self.delete)
         self.frame_7 = QtWidgets.QFrame(self.frame_5)
         self.frame_7.setGeometry(QtCore.QRect(149, 218, 28, 28))
         self.frame_7.setStyleSheet("background-image: url(:/images/Images/pin1.png);\n"
@@ -3117,8 +3169,6 @@ class Ui_Form(object):
         self.label_7.setObjectName("label_7")
         self.rate_label = QtWidgets.QLabel(self.frame_4)
         self.rate_label.setGeometry(QtCore.QRect(190, 240, 81, 31))
-        self.rate_label.setStyleSheet("color: rgb(0, 153, 0);\n"
-                                      "font: 63 14pt \"Segoe UI Semibold\";")
         self.rate_label.setAlignment(QtCore.Qt.AlignCenter)
         self.rate_label.setObjectName("rate_label")
         self.win_label = QtWidgets.QLabel(self.frame_4)
@@ -3170,12 +3220,7 @@ class Ui_Form(object):
         self.frame_2.setObjectName("frame_2")
         self.profile_pure_profit_label = QtWidgets.QLabel(self.frame_2)
         self.profile_pure_profit_label.setGeometry(QtCore.QRect(130, 0, 141, 51))
-        self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
-                                                     "\n"
-                                                     "\n"
-                                                     "\n"
-                                                     "color: rgb(0, 132, 0);\n"
-                                                     "background: transparent;")
+
         self.profile_pure_profit_label.setAlignment(QtCore.Qt.AlignCenter)
         self.profile_pure_profit_label.setObjectName("profile_pure_profit_label")
         self.label_21 = QtWidgets.QLabel(self.frame_2)
@@ -3409,6 +3454,7 @@ class Ui_Form(object):
         self.table()
         self.currency_combo_init()
         self.opentrade_init()
+        self.compare_calc()
 
         # =========================================
 
@@ -3532,6 +3578,7 @@ class Ui_Form(object):
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
 
                 self.table()
+                self.compare_calc()
             else:
                 pass
         except Exception as e:
@@ -3654,7 +3701,7 @@ class Ui_Form(object):
                 item.setText(_translate("MyAPP", f"{journal_data[(len(journal_data) - 1) - k][3]}"))
                 item = self.TABLE_Widget.item(i, 2)
                 item.setText(_translate("MyAPP",
-                                        f"{journal_data[(len(journal_data) - 1) - k][4]} $"))
+                                        f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][4])} $"))
                 item = self.TABLE_Widget.item(i, 3)
                 item.setText(_translate("MyAPP",
                                         f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"))
@@ -3669,7 +3716,7 @@ class Ui_Form(object):
                            str(round(abs(curr - int(curr)), 1)).split(".")[1]
                 item.setText(
                     _translate("MyAPP",
-                               f"{round(result, 5)}₿ ➨ "
+                               f"{self.small_value(round(result, 5))}₿ ➨ "
                                f"{self.zero_remover(usd)} $ "
                                f"| {self.zero_remover(currency)}"
                                f" {currency_s}"))
@@ -3682,7 +3729,7 @@ class Ui_Form(object):
                 item.setForeground(brush)
                 k += 1
             self.TABLE_Widget.setSortingEnabled(__sortingEnabled)
-            self.TABLE_Widget.sortItems(1, QtCore.Qt.DescendingOrder)
+            #self.TABLE_Widget.sortItems(1, QtCore.Qt.DescendingOrder)
         except Exception as e:
             print("table", e)
             pass
@@ -3739,10 +3786,11 @@ class Ui_Form(object):
                 entry = float(self.input_entry_BS.text())
 
                 self.checkBox_opentrade.setEnabled(False)
-                date = datetime.date.today()
-                month = date.month
-                day = date.day
-                year = date.year
+                date_ = datetime.date.today()
+                month = date_.month
+                day = date_.day
+                year = date_.year
+                date = f"{month}-{day}-{year}"
 
                 open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
 
@@ -3792,6 +3840,7 @@ class Ui_Form(object):
 
                         self.journal_sell()
                         self.table()
+                        self.compare_calc()
 
                     elif x_amount < 0:
 
@@ -3807,6 +3856,7 @@ class Ui_Form(object):
 
                         self.journal_sell()
                         self.table()
+                        self.compare_calc()
 
                     elif x_amount == 0:
 
@@ -3816,6 +3866,7 @@ class Ui_Form(object):
 
                         self.journal_sell()
                         self.table()
+                        self.compare_calc()
                         self.checkBox_opentrade.setChecked(False)
                         self.checkBox_opentrade.setEnabled(True)
                         self.input_exit_BS.setReadOnly(False)
@@ -3900,6 +3951,7 @@ class Ui_Form(object):
         else:
             self.journal_buy()
             self.table()
+            self.compare_calc()
 
     def calc_openTradeSELL(self):
         _translate = QtCore.QCoreApplication.translate
@@ -3909,10 +3961,11 @@ class Ui_Form(object):
                 entry = float(self.input_entry_BS.text())
 
                 self.checkBox_opentrade.setEnabled(False)
-                date = datetime.date.today()
-                month = date.month
-                day = date.day
-                year = date.year
+                date_ = datetime.date.today()
+                month = date_.month
+                day = date_.day
+                year = date_.year
+                date = f"{month}-{day}-{year}"
 
                 open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
 
@@ -3960,8 +4013,9 @@ class Ui_Form(object):
 
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
-                        self.journal_sell()
+                        self.journal_buy()
                         self.table()
+                        self.compare_calc()
 
                     elif x_amount < 0:
 
@@ -3975,8 +4029,9 @@ class Ui_Form(object):
 
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
-                        self.journal_sell()
+                        self.journal_buy()
                         self.table()
+                        self.compare_calc()
 
                     elif x_amount == 0:
 
@@ -3984,8 +4039,9 @@ class Ui_Form(object):
 
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
-                        self.journal_sell()
+                        self.journal_buy()
                         self.table()
+                        self.compare_calc()
                         self.checkBox_opentrade.setChecked(False)
                         self.checkBox_opentrade.setEnabled(True)
                         self.input_exit_BS.setReadOnly(False)
@@ -4069,18 +4125,168 @@ class Ui_Form(object):
         else:
             self.journal_sell()
             self.table()
+            self.compare_calc()
+
+    def delete(self):
+        _translate = QtCore.QCoreApplication.translate
+        id_ = self.input_delete.text()
+        try:
+            if id_ != "":
+                value_ = int(id_)
+                Extract(f"Journal_{identity}").delete(where="id", cell=value_)
+                id_list_ = Extract(f"Journal_{identity}").select_column("id")
+                counter_ = 1
+                for i in id_list_:
+                    Journal(name=f"Journal_{identity}", id_=i, month=0, year=0, date=0, amount=0, entry=0, exit_=0,
+                            result=0).update_one(counter_)
+                    counter_ += 1
+
+                self.table()
+                self.compare_calc()
+            else:
+                pass
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Information)
+            msg.setText("Error")
+            msg.setInformativeText(f'The ID {id_} cannot be found.')
+            msg.setWindowTitle("ID Error")
+            msg.exec_()
+            self.input_delete.setText(_translate("MyAPP", ""))
+
+    def modify_sell(self):
+        _translate = QtCore.QCoreApplication.translate
+        data = self.input_modify.text()
+        try:
+            id_, amount, entry, exit_ = data.split("/")
+            id_ = int(id_)
+            old_data = Extract(f"Journal_{identity}").get_by_id(id_)
+            date = old_data[3]
+            month = old_data[1]
+            year = old_data[2]
+            id_ = old_data[0]
+
+            result = ((float(entry) - float(exit_)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
+
+            _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
+
+            Table(f'Journal_{identity}').create()
+
+            Journal(name=f"Journal_{identity}", id_=str(id_), month=str(month), year=str(year),
+                    date=str(date), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    result=_result).update()
+
+            self.table()
+            self.compare_calc()
+
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Input Error")
+            msg.setInformativeText("Please enter the correct format\nID/Amount/Entry/Exit\n"
+                                   "with the forward slash.")
+            msg.setWindowTitle("input-Error")
+            msg.exec_()
+
+    def modify_buy(self):
+        _translate = QtCore.QCoreApplication.translate
+        data = self.input_modify.text()
+
+        try:
+            id_, amount, entry, exit_ = data.split("/")
+            id_ = int(id_)
+            old_data = Extract(f"Journal_{identity}").get_by_id(id_)
+            print(old_data)
+            date = old_data[3]
+            month = old_data[1]
+            year = old_data[2]
+            id_ = old_data[0]
+
+            result = ((float(exit_) - float(entry)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
+
+            _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
+
+            Table(f'Journal_{identity}').create()
+
+            Journal(name=f"Journal_{identity}", id_=str(id_), month=str(month), year=str(year),
+                    date=str(date), amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
+                    result=_result).update()
+
+            self.table()
+            self.compare_calc()
+
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Input Error")
+            msg.setInformativeText("Please enter the correct format\nID/Amount/Entry/Exit\n"
+                                   "with the forward slash.")
+            msg.setWindowTitle("input-Error")
+            msg.exec_()
+
+    def compare_calc(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            data = Extract(f"Journal_{identity}").select_column("result")
+            negative = [x for x in data if x < 0]
+            positive = [x for x in data if x >= 0]
+            print(self.small_value(round(max(negative), 5)))
+
+            self.max_gain_1_label.setText(_translate("Form", f"+{self.small_value(round(max(positive), 5))}₿"))
+            self.min_gain_1_label.setText(_translate("Form", f"+{self.small_value(round(min(positive), 5))}₿"))
+            self.max_loss_1_label.setText(_translate("Form", f"{self.small_value(round(min(negative), 5))}₿"))
+            self.min_loss_1_label.setText(_translate("Form", f"{self.small_value(round(max(negative), 5))}₿"))
+            # =====
+            ppp = sum(data)
+            print(ppp)
+            if ppp >= 0:
+                self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                             "color: rgb(0, 132, 0);\n"
+                                                             "background: transparent;")
+                self.profile_pure_profit_label.setText(_translate("Form",
+                                                                  f"+{round(ppp, 5)}₿"))
+            else:
+                self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                             "color: rgb(191, 0, 0);\n"
+                                                             "background: transparent;")
+                self.profile_pure_profit_label.setText(_translate("Form",
+                                                                  f"{round(ppp, 5)}₿"))
+
+            self.profile_total_wins_label.setText(_translate("Form", f"+{round(sum(positive), 5)}₿"))
+            self.profile_total_losses_label.setText(_translate("Form", f"{round(sum(negative), 5)}₿"))
+
+            # =========
+            p = len(positive)
+            n = len(negative)
+            if p > n:
+                percentage = "+"+str(int((p / (n + p)) * 100))
+                color = "color: rgb(0, 153, 0);"
+            elif n > p:
+                percentage = int((n / (n + p)) * -100)
+                color = "color: rgb(200, 0, 0);"
+            else:
+                percentage = 0
+                color = "color: rgb(0, 153, 0);"
+            self.rate_label.setText(_translate("Form", f"{percentage}%"))
+
+            self.rate_label.setStyleSheet(f"{color}\n"
+                                          "font: 63 14pt \"Segoe UI Semibold\";")
+            self.win_label.setText(_translate("Form", f"{p}"))
+            self.losses_label.setText(_translate("Form", f"{n}"))
+
+        except Exception as e:
+            print("ww", e)
+            pass
 
     def retranslateUi(self, Form):
         _translate = QtCore.QCoreApplication.translate
         Form.setWindowTitle(_translate("Form", "BitHunter"))
-        # =============================================
-        self.max_gain_1_label.setText(_translate("Form", "+0.12304₿"))
         self.label_31.setText(_translate("Form", "MAX Gain"))
-        self.min_gain_1_label.setText(_translate("Form", "+0.12304₿"))
         self.label_34.setText(_translate("Form", "MIN Gain"))
-        self.max_loss_1_label.setText(_translate("Form", "+0.12304₿"))
         self.label_36.setText(_translate("Form", "MAX Loss"))
-        self.min_loss_1_label.setText(_translate("Form", "+0.12304₿"))
         self.label_38.setText(_translate("Form", "MIN Loss"))
         self.btn_SELL.setText(_translate("Form", "▼ SELL"))
         self.btn_BUY.setText(_translate("Form", "▲ BUY"))
@@ -4243,16 +4449,12 @@ class Ui_Form(object):
         self.label_10.setText(_translate("Form", "Rate"))
         self.label_8.setText(_translate("Form", "Wins"))
         self.label_7.setText(_translate("Form", "losses"))
-        self.rate_label.setText(_translate("Form", "+75%"))
-        self.win_label.setText(_translate("Form", "75"))
-        self.losses_label.setText(_translate("Form", "12"))
-        self.name_label.setText(_translate("Form", "ISAAC FROST"))
-        self.profile_pure_profit_label.setText(_translate("Form", "+0.10304₿"))
+
+        self.name_label.setText(_translate("Form", f"{username.upper()}"))
+
         self.label_21.setText(_translate("Form", "Pure Profit"))
-        self.profile_total_wins_label.setText(_translate("Form", "+0.12304₿"))
         self.label_22.setText(_translate("Form", "Total Wins"))
         self.label_23.setText(_translate("Form", "Total Losses"))
-        self.profile_total_losses_label.setText(_translate("Form", "+0.12304₿"))
         self.label_11.setText(_translate("Form", "BTC PRICE"))
         self.btc_price.setText(_translate("Form", f"{API.btc()[0].split('.')[0]}$"))
 
