@@ -1,9 +1,0 @@
-<RCC>
-  <qresource prefix="log">
-    <file>Images/male avatar.png</file>
-    <file>Images/MainWinTite.png</file>
-  </qresource>
-  <qresource prefix="background">
-    <file>Images/bgi.png</file>
-  </qresource>
-</RCC>

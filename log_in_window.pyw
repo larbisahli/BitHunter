@@ -14,21 +14,14 @@ import datetime
 import pickle
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from PyQt5 import QtCore, QtGui, QtWidgets
-import sqlite3
-import hashlib
-import threading
 import time
 import log_image_rc
 from dbManagement import *
 
 
-# identity = hash_(str(username) + str(password))
-
-# the username / Gmail / password (for sending it via Gmail if the user forget)
-
 def current_time():
     now = datetime.datetime.now()
-    current_time_ = datetime.time(hour=now.hour, minute=now.minute).strftime('%I:%M%p').lstrip('0')
+    current_time_ = datetime.time(hour=now.hour, minute=now.minute).strftime('%I:%M %p').lstrip('0')
     return current_time_
 
 
@@ -166,38 +159,38 @@ class Ui_Form(object):
         self.btn_register = QtWidgets.QPushButton(self.frame_2)
         self.btn_register.setGeometry(QtCore.QRect(26, 330, 61, 31))
         self.btn_register.setStyleSheet("*{\n"
-                                         "color: rgb(255, 255, 255);\n"
-                                         "}\n"
-                                         "\n"
-                                         "QPushButton:hover{\n"
-                                         "color: rgb(255, 255, 255);\n"
-                                         ";\n"
-                                         "    \n"
-                                         "    background-color: rgb(0, 0, 0);\n"
-                                         "\n"
-                                         "}\n"
-                                         "\n"
-                                         "QPushButton{\n"
-                                         "border: 1px solid  #333;\n"
-                                         "background:  rgb(211, 211,211);\n"
-                                         "border-radius:10px;\n"
-                                         "font: 75 10pt \"MS Shell Dlg 2\";\n"
-                                         "}\n"
-                                         "\n"
-                                         "\n"
-                                         "QPushButton:hover{\n"
-                                         "\n"
-                                         "color: rgb(225, 150, 0);\n"
-                                         "    background-color: rgb(55, 55,55);\n"
-                                         "border-radius:10px;\n"
-                                         "font: 75 10pt \"MS Shell Dlg 2\";\n"
-                                         "}\n"
-                                         "\n"
-                                         "QPushButton:pressed \n"
-                                         "{\n"
-                                         " border: 2px inset   rgb(225, 150, 0);\n"
-                                         "background-color: #333;\n"
-                                         "}")
+                                        "color: rgb(255, 255, 255);\n"
+                                        "}\n"
+                                        "\n"
+                                        "QPushButton:hover{\n"
+                                        "color: rgb(255, 255, 255);\n"
+                                        ";\n"
+                                        "    \n"
+                                        "    background-color: rgb(0, 0, 0);\n"
+                                        "\n"
+                                        "}\n"
+                                        "\n"
+                                        "QPushButton{\n"
+                                        "border: 1px solid  #333;\n"
+                                        "background:  rgb(211, 211,211);\n"
+                                        "border-radius:10px;\n"
+                                        "font: 75 10pt \"MS Shell Dlg 2\";\n"
+                                        "}\n"
+                                        "\n"
+                                        "\n"
+                                        "QPushButton:hover{\n"
+                                        "\n"
+                                        "color: rgb(225, 150, 0);\n"
+                                        "    background-color: rgb(55, 55,55);\n"
+                                        "border-radius:10px;\n"
+                                        "font: 75 10pt \"MS Shell Dlg 2\";\n"
+                                        "}\n"
+                                        "\n"
+                                        "QPushButton:pressed \n"
+                                        "{\n"
+                                        " border: 2px inset   rgb(225, 150, 0);\n"
+                                        "background-color: #333;\n"
+                                        "}")
         self.btn_register.setText("")
         icon1 = QtGui.QIcon()
         icon1.addPixmap(QtGui.QPixmap(":/log_pic/Images/add-user-male-52.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
@@ -208,10 +201,10 @@ class Ui_Form(object):
         self.frame_image = QtWidgets.QToolButton(Form)
         self.frame_image.setGeometry(QtCore.QRect(96, 50, 111, 111))
         self.frame_image.setStyleSheet("border-radius:55px;\n"
-                                        "background: rgb(203, 135, 0);\n"
-                                        "background-color: rgb(255,215,0);\n"
-                                        "\n"
-                                        "")
+                                       "background: rgb(203, 135, 0);\n"
+                                       "background-color: rgb(255,215,0);\n"
+                                       "\n"
+                                       "")
         self.frame_image.setText("")
         self.frame_image.setObjectName("frame_image")
         self.image_frame = QtWidgets.QToolButton(Form)
@@ -236,79 +229,101 @@ class Ui_Form(object):
         self.down_bar_label.setMidLineWidth(0)
         self.down_bar_label.setIndent(10)
         self.down_bar_label.setObjectName("down_bar_label")
-
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
+        # =======================
         self.check()
+        app.aboutToQuit.connect(self.quit)  # break the loop when the window is closed
+
+    def quit(self):
+        try:
+            with open("current_access.dat", "rb") as r:
+                dictionary = pickle.load(r)
+
+            identity = dictionary["identity"]
+            Pre_values(name=f"Prevalues_{identity}", id_="stop_threads", data="0").update()
+        except Exception:
+            pass
 
     def check(self):
-        _translate = QtCore.QCoreApplication.translate
-        check = False
-        Table("Sign").create()
-        pre_list_ = Extract("Sign").select_column(column="pass")
-        len_ = len(pre_list_)
-        if len_ != 0:
-            check = True
-            list_ = Extract("Sign").get_by_column(column="pass", cell=pre_list_[len_-1])
-        else:
-            self.input_signin_username.setText(_translate("Form", ""))
-            self.input_signin_password.setText(_translate("Form", ""))
-            list_ = []
+        try:
+            _translate = QtCore.QCoreApplication.translate
+            check = False
+            Table("Sign").create()
+            pre_list_ = Extract("Sign").select_column(column="pass")
+            len_ = len(pre_list_)
+            if len_ != 0:
+                check = True
+                list_ = Extract("Sign").get_by_column(column="pass", cell=pre_list_[len_ - 1])
+            else:
+                self.input_signin_username.setText(_translate("Form", ""))
+                self.input_signin_password.setText(_translate("Form", ""))
+                list_ = []
 
-        if self.check_remember_me.isChecked() and check:
-            self.input_signin_username.setText(_translate("Form", f"{decrypt(list_[0])}"))
-            self.input_signin_password.setText(_translate("Form", f"{decrypt(list_[1])}"))
-        elif not self.check_remember_me.isChecked() and check:
-            self.input_signin_username.setText(_translate("Form", ""))
-            self.input_signin_password.setText(_translate("Form", ""))
+            if self.check_remember_me.isChecked() and check:
+                self.input_signin_username.setText(_translate("Form", f"{decrypt(list_[0])}"))
+                self.input_signin_password.setText(_translate("Form", f"{decrypt(list_[1])}"))
+            elif not self.check_remember_me.isChecked() and check:
+                self.input_signin_username.setText(_translate("Form", ""))
+                self.input_signin_password.setText(_translate("Form", ""))
+        except Exception:
+            pass
 
     def register(self):
 
         username = str(self.input_signin_username.text())
         password = str(self.input_signin_password.text())
-        Table("Sign").create()
-        list_ = Extract("Sign").select_column(column="username")
-        if len(list_) == 0:
-            Sign(password=password, username=username).insert()
-        else:
-            if not encrypt(username) in list_:
+        try:
+            Table("Sign").create()
+            list_ = Extract("Sign").select_column(column="username")
+            if len(list_) == 0:
                 Sign(password=password, username=username).insert()
             else:
-                msg = QMessageBox()
-                msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
-                msg.setIcon(QMessageBox.Warning)
-                msg.setText("Input Error")
-                msg.setInformativeText(
-                    "Username already exist")
-                msg.setWindowTitle("input-Error")
-                msg.exec_()
+                if not encrypt(username) in list_:
+                    Sign(password=password, username=username).insert()
+                else:
+                    msg = QMessageBox()
+                    msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setText("Input Error")
+                    msg.setInformativeText("\nUsername already exist.\n")
+                    msg.setWindowTitle("input-Error")
+                    msg.exec_()
+        except Exception:
+            pass
 
     def sign_in(self):
-
-        username = str(self.input_signin_username.text())
-        password = str(self.input_signin_password.text())
-        current_user = {"identity": hash_(username+password), "username": username}
-        import pickle
-        with open("current_access.txt", "wb") as w:
-            pickle.dump(current_user, w)
-        Table("Sign").create()
-        list_ = Extract("Sign").get_by_column(column="pass", cell=hash_(username))
-        if hash_(username) in list_ and list_[1] == encrypt(password):
-            from MainWindow import Ui_Form
-            self.ui = Ui_Form()
-            self.Form = QtWidgets.QWidget()
-            self.ui.setupUi(self.Form)
-            #self.ui.graph()
-            self.Form.show()
-            time.sleep(2)
-            Form.close()
-        else:
+        try:
+            username = str(self.input_signin_username.text())
+            password = str(self.input_signin_password.text())
+            current_user = {"identity": hash_(username + password), "username": username}
+            import pickle
+            with open("current_access.dat", "wb") as w:
+                pickle.dump(current_user, w)
+            Table("Sign").create()
+            list_ = Extract("Sign").get_by_column(column="pass", cell=hash_(username))
+            if hash_(username) in list_ and list_[1] == encrypt(password):  # ??? hash not encrypt
+                from MainWindow import Ui_Form
+                self.ui = Ui_Form()
+                self.Form = QtWidgets.QWidget()
+                self.ui.setupUi(self.Form)
+                self.Form.show()
+                time.sleep(2)
+                Form.close()
+            else:
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Input Error")
+                msg.setInformativeText("\nThe account does not exist.\n")
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
+        except Exception:
             msg = QMessageBox()
-            msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
             msg.setIcon(QMessageBox.Warning)
             msg.setText("Input Error")
-            msg.setInformativeText(
-                "The account does not exist")
+            msg.setInformativeText("\nThe account does not exist.\n")
             msg.setWindowTitle("input-Error")
             msg.exec_()
 

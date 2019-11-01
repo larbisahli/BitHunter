@@ -5,17 +5,19 @@
 """
             ####################################
             #                                  #
-            #       Author: Larbi Sahli        #
+            #      Author: Larbi Sahli         #
             #                                  #
             #  https://github.com/Larbi-Sahli  #
             #                                  #
             ####################################
 """
 import datetime
+import json
 import pickle
 import time
 import traceback
 import threading
+from PyQt5.QtCore import QThread
 import image_rc
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from os.path import expanduser
@@ -25,15 +27,26 @@ import os
 from json import JSONDecodeError
 import requests
 from dbManagement import *
+from html import *
+import matplotlib
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from pandas import np
+import matplotlib.dates as mdates
+from pandas.plotting import register_matplotlib_converters
+from matplotlib import style
+from matplotlib.dates import MonthLocator, WeekdayLocator, DateFormatter
+from requests.exceptions import ConnectionError
+from playsound import playsound
 
 
 def current_time():
     now = datetime.datetime.now()
-    current_time_ = datetime.time(hour=now.hour, minute=now.minute).strftime('%I:%M%p').lstrip('0')
+    current_time_ = datetime.time(hour=now.hour, minute=now.minute).strftime('%I:%M %p').lstrip('0')
     return current_time_
 
 
-with open("current_access.txt", "rb") as r:
+with open("current_access.dat", "rb") as r:
     dictionary = pickle.load(r)
 
 identity = dictionary["identity"]
@@ -44,21 +57,28 @@ def convert_bytes(num):
     """
     this function will convert bytes to MB.... GB... etc
     """
-    for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
-        if num < 1024.0:
-            return "%3.0f %s" % (num, x)
-        num /= 1024.0
+    try:
+
+        for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
+            if num < 1024.0:
+                return f"{round(num)} {x}"
+            num /= 1024.0
+    except Exception:
+        pass
 
 
 def file_size(file_path):
     """
-    this function will return the file size
+    this function will return the database file size
     """
-    if os.path.isfile(file_path):
-        file_info = os.stat(file_path)
-        return convert_bytes(file_info.st_size)
+    try:
+        if os.path.isfile(file_path):
+            file_info = os.stat(file_path)
+            return convert_bytes(file_info.st_size)
+    except Exception:
+        pass
 
-"""
+
 class API:
 
     @staticmethod
@@ -99,140 +119,180 @@ class API:
             return None
         return float(response.text)
 
-"""
-
-class API:
-    @staticmethod
-    def btc():
-        return "8,342.4", 8342.4
-
-    @staticmethod
-    def currency_exchange(currency):
-        return 1.324
 
 try:
     old_btc_price = API().btc()[1]
 except Exception:
-    old_btc_price = 0
+    old_btc_price = None
+
+
+# ======================
+
+
+def thread_init():
+    try:
+        Table(f"Prevalues_{identity}").create()
+        if not Extract(f"Prevalues_{identity}").check_cell("stop_threads"):
+            """ 1 is ON, 0 is OFF"""
+            Pre_values(name=f"Prevalues_{identity}", id_="stop_threads", data="1").insert()
+        else:
+            Pre_values(name=f"Prevalues_{identity}", id_="stop_threads", data="1").update()
+    except Exception:
+        pass
+
+thread_init()
+
+# ===================== graph =====================
+
+
+class MyMplCanvas(FigureCanvas):  # graph init
+
+    def __init__(self, parent=None, width=0, height=0, dpi=100, list_=None, date=None):
+        fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = fig.add_subplot(111)
+        FigureCanvas.__init__(self, fig)
+        self.setParent(parent)
+        self.graph_launcher(list_, date)
+
+    def graph_launcher(self, list_, date):
+        try:
+            register_matplotlib_converters()
+            # print(style.available)
+            # style.use("dark_background")
+            dates_in_string = []
+            y = []
+            for i in list_:
+                dates_in_string.append(i[0])
+                y.append(i[1])
+            dates_datetime = []
+            for d in dates_in_string:
+                dates_datetime.append(datetime.datetime.strptime(d, "%m-%d-%Y"))
+
+            dates_float = matplotlib.dates.date2num(dates_datetime)
+            y = np.array(y)
+            x = np.array(dates_float)
+            pos_data = y.copy()
+            neg_data = y.copy()
+            pos_data[pos_data <= 0] = np.nan
+            neg_data[neg_data >= 0] = np.nan
+
+            # -----------------
+            self.axes.plot_date(x, y, linestyle='-', color="gray", marker='.')
+            self.axes.plot_date(x, pos_data, linestyle='', label="▲ gain", color="lime", marker='o')
+            self.axes.plot_date(x, neg_data, linestyle='', label="▼ loss", color="r", marker='o')
+
+            self.axes.axhline(0, color="black", linewidth=1)
+            monthsFmt = DateFormatter("%b '%d")
+            self.axes.spines["left"].set_color("black")
+            self.axes.spines["left"].set_linewidth(2)
+            self.axes.spines["right"].set_visible(False)
+            self.axes.spines["top"].set_visible(False)
+            self.axes.spines["bottom"].set_visible(False)
+            self.axes.tick_params(axis="x", colors="black",
+                                  labelsize=8, rotation=20)
+            self.axes.set_title(date)
+            self.axes.set_ylabel('RESULT in BTC')
+            self.axes.legend(shadow=True, fancybox=True)
+            self.axes.xaxis.set_major_formatter(monthsFmt)
+            self.axes.autoscale_view()
+            self.show()
+        except Exception:
+            pass
+
+
+# =================================================
 
 
 class Thread:
-
     @staticmethod
     def every(delay, task):
-        next_time = time.time() + delay
-        while True:
-            if 1 != 0:  # this is to break the loop after the program closed
-                time.sleep(max(0, next_time - time.time()))
-                try:
-                    task()
-                except TypeError:
-                    traceback.print_exc()
-                # skip tasks if we are behind schedule:
-                next_time += (time.time() - next_time) // delay * delay + delay
-            else:
-                break
+        try:
+            next_time = time.time() + delay
+            while True:
+                """ break the loop when closed """
+                t_state = Extract(f"Prevalues_{identity}").get_by_id("stop_threads")
+                if int(t_state[1]) == 1:  # this is to break the loop after the program closed
+                    time.sleep(max(0, next_time - time.time()))
+                    try:
+                        task()
+                    except TypeError:
+                        traceback.print_exc()
+                    # skip tasks if we are behind schedule:
+                    next_time += (time.time() - next_time) // delay * delay + delay
+                else:
+                    break
+        except Exception:
+            pass
 
 
 class Ui_Form(object):
 
     def opentrade_init(self):
-        _translate = QtCore.QCoreApplication.translate
+        try:
+            _translate = QtCore.QCoreApplication.translate
+            if not Extract(f"Prevalues_{identity}").check_cell("opentrade"):
+                data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
+                Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).insert()
+                data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
+                Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).insert()
 
-        if not Extract(f"Prevalues_{identity}").check_cell("opentrade"):
-            Table(f"Prevalues_{identity}").create()
-            data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
-            Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).insert()
-            data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
-            Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).insert()
+            dict_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+            amount = dict_["amount"]
+            entry = dict_["entry"]
+            state = dict_["state"]
+            date = dict_["date"]
 
-        dict_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
-        amount = dict_["amount"]
-        entry = dict_["entry"]
-        state = dict_["state"]
-        date = dict_["date"]
+            if state != "closed":
+                self.checkBox_opentrade.setChecked(True)
+                self.checkBox_opentrade.setEnabled(False)
+                color = "background: rgb(191, 0, 0);" if state == "SELL" else "background: rgb(0, 132, 0);"
 
-        print("dictionary", dict_)
-        if state != "closed":
-            self.checkBox_opentrade.setChecked(True)
-            color = "background: rgb(191, 0, 0);" if state == "SELL" else \
-                "background: rgb(0, 132, 0);"
+                self.trade_date.setText(_translate("Form", f"{date}"))
+                self.frame_12.setStyleSheet(color)
+                self.trade_amount.setText(_translate("Form", f"{amount}$"))
+                self.frame_13.setStyleSheet(color)
+                self.trade_entry.setText(_translate("Form", f"{entry}$"))
+                self.frame_14.setStyleSheet(color)
 
-            self.trade_date.setText(_translate("Form", f"{date}"))
-            self.frame_12.setStyleSheet(color)
-            self.trade_amount.setText(_translate("Form", f"{amount}$"))
-            self.frame_13.setStyleSheet(color)
-            self.trade_entry.setText(_translate("Form", f"{entry}$"))
-            self.frame_14.setStyleSheet(color)
+                frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
+                    state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);"
 
-            frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
-                state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
+                self.Trade_state_frame.setStyleSheet(f"{frame_state}\n""background-color: transparent;")
 
-            self.Trade_state_frame.setStyleSheet(f"{frame_state}"
-                                                 "background-color: transparent;")
+                self.input_exit_BS.setReadOnly(True)
+                self.input_exit_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setStyleSheet("*{font: 75 12pt \"Bahnschrift\";\n"
+                                                 "color: rgb(0, 0, 0);}\n"
+                                                 "QLineEdit{\n"
+                                                 "border-radius:8px;\n"
+                                                 "background: rgb(100, 100, 100);\n}")
 
-            self.input_exit_BS.setReadOnly(True)
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setStyleSheet("*{\n"
-                                             "font: 75 12pt \"Bahnschrift\";\n"
-                                             "color: rgb(0, 0, 0);\n"
-                                             "}\n"
-                                             "QLineEdit{\n"
-                                             "border-radius:8px;\n"
-                                             "background: rgb(100, 100, 100);\n"
-                                             "}")
+                self.bottom_trade_label.setText(_translate("Form", f"Trade open since : {date}"))
 
-            # -----------------------------------------------
+            else:
+                self.checkBox_opentrade.setChecked(False)
+                self.checkBox_opentrade.setEnabled(True)
+                color = "background: rgb(0, 0, 0);"
+                self.trade_date.setText(_translate("Form", ""))
+                self.frame_12.setStyleSheet(color)
+                self.trade_amount.setText(_translate("Form", ""))
+                self.frame_13.setStyleSheet(color)
+                self.trade_entry.setText(_translate("Form", ""))
+                self.frame_14.setStyleSheet(color)
 
-            self.down_bar_label.setText(_translate("Form",
-                                                   f"Data Storage Size : {file_size('database.db')}                "
-                                                   f"                  Trade open since : {date}                   "
-                                                   f"                        "
-                                                   "                                                    "
-                                                   "                         "
-                                                   "                                                    "
-                                                   "                         "
-                                                   "                                                    "
-                                                   f"              {current_time()} "))
+                self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                     "background-color: transparent;")
 
-        else:
-            self.checkBox_opentrade.setChecked(False)
-            color = "background: rgb(0, 0, 0);"
-
-            self.trade_date.setText(_translate("Form", ""))
-            self.frame_12.setStyleSheet(color)
-            self.trade_amount.setText(_translate("Form", ""))
-            self.frame_13.setStyleSheet(color)
-            self.trade_entry.setText(_translate("Form", ""))
-            self.frame_14.setStyleSheet(color)
-
-            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
-                                                 "background-color: transparent;")
-
-            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
-                                                 "background-color: transparent;")
-
-            self.input_exit_BS.setReadOnly(False)
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setStyleSheet("*{\n"
-                                             "font: 75 12pt \"Bahnschrift\";\n"
-                                             "color: rgb(0, 0, 0);\n"
-                                             "}\n"
-                                             "QLineEdit{\n"
-                                             "border-radius:8px;\n"
-                                             "background: rgb(240, 240, 240);\n"
-                                             "}")
-            # =======
-            self.down_bar_label.setText(_translate("Form",
-                                                   f"Data Storage Size : {file_size('database.db')}                "
-                                                   f"                  Trade closed :                              "
-                                                   f"                        "
-                                                   "                                                    "
-                                                   "                         "
-                                                   "                                                    "
-                                                   "                         "
-                                                   "                                                    "
-                                                   f"                   {current_time()} "))
+                self.input_exit_BS.setReadOnly(False)
+                self.input_exit_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setStyleSheet("*{font: 75 12pt \"Bahnschrift\";\n"
+                                                 "color: rgb(0, 0, 0);}\n"
+                                                 "QLineEdit{\n"
+                                                 "border-radius:8px;\n"
+                                                 "background: rgb(240, 240, 240);\n}")
+                self.bottom_trade_label.setText(_translate("Form", "Trade closed :"))
+        except Exception:
+            pass
 
     def journal_buy(self):
         global old_btc_price
@@ -240,7 +300,6 @@ class Ui_Form(object):
         try:
 
             state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentradeplus")[1])
-
             amount = state["amount"]
             entry = state["entry"]
             exit_ = state["exit"]
@@ -256,6 +315,7 @@ class Ui_Form(object):
                 year = date.year
                 day = date.day
                 date_ = f"{month}-{day}-{year}"
+
             else:
                 data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
                 Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
@@ -266,21 +326,31 @@ class Ui_Form(object):
 
             _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
 
-            Table(f'Journal_{identity}').create()
+            if result != 0:
 
-            count = len(Extract(f"Journal_{identity}").fetchall())
+                count = len(Extract(f"Journal_{identity}").fetchall())
+                month_year = f"{month}/{year}"
+                Journal(name=f"Journal_{identity}", id_=str(count + 1), month_year=month_year,
+                        date=date_, amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
+                        result=_result).insert()
+                # ---------------------------------------
+                self.input_amount_BS_3.setText(_translate("Form", ""))
+                self.input_entry_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setText(_translate("Form", ""))
 
-            Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
-                    date=date_, amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
-                    result=_result).insert()
+            else:
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Input Error")
+                msg.setInformativeText("\n Your result is equal to 0, the program store only None zero values.\n\n")
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
 
-            # ---------------------------------------
-            self.input_amount_BS_3.setText(_translate("MyAPP", ""))
-            self.input_entry_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-
-        except Exception as e:
-            print("journal buy ", e)
+        except ValueError:
+            pass
+        except Exception:
+            pass
 
     def journal_sell(self):
         global old_btc_price
@@ -314,163 +384,194 @@ class Ui_Form(object):
 
             _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
 
-            Table(f'Journal_{identity}').create()
+            if result != 0:
+                count = len(Extract(f"Journal_{identity}").fetchall())
+                month_year = f"{month}/{year}"
+                Journal(name=f"Journal_{identity}", id_=str(count + 1), month_year=month_year,
+                        date=str(date_), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
+                        result=_result).insert()
 
-            count = len(Extract(f"Journal_{identity}").fetchall())
+                # ---------------------------------------
+                self.input_amount_BS_3.setText(_translate("Form", ""))
+                self.input_entry_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setText(_translate("Form", ""))
+            else:
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Input Error")
+                msg.setInformativeText("\n Your result is equal to 0, the program store only None zero values.\n\n")
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
 
-            Journal(name=f"Journal_{identity}", id_=str(count + 1), month=str(month), year=str(year),
-                    date=str(date_), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
-                    result=_result).insert()
-
-            # ---------------------------------------
-            self.input_amount_BS_3.setText(_translate("MyAPP", ""))
-            self.input_entry_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-
-        except Exception as e:
-            print("journal sell ", e)
+        except ValueError:
+            pass
+        except Exception:
+            pass
 
     def update(self):
         global old_btc_price
         _translate = QtCore.QCoreApplication.translate
-        btc_price = API().btc()
+        try:
+            btc_price = API().btc()
+            if btc_price is not None:
+                updated_btc_price = btc_price[1]
+                str_btc_price = btc_price[0]
+                if updated_btc_price >= old_btc_price:
+                    color = "color: rgb(0, 132, 0);"
 
-        print(btc_price)
-        if btc_price is not None:
-            updated_btc_price = btc_price[1]
-            str_btc_price = btc_price[0]
-            if updated_btc_price > old_btc_price:
+                else:
+                    color = "color: rgb(188, 0, 0);"
+
                 self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                              "background: transparent;\n"
-                                             "color: rgb(0, 132, 0);")
+                                             f"{color}\n")
                 self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
-            elif updated_btc_price < old_btc_price:
-                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
-                                             "background: transparent;\n"
-                                             "color: rgb(188, 0, 0);")
-                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
+                old_btc_price = updated_btc_price
+
+            # =======================
+
+                if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                    value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+                    currency_price = value["currency_Price"]
+
+                    if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                        input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
+
+                        input_wallet = input_wallet[1]
+
+                        xusd = round(((float(input_wallet) * 0.00000001) * old_btc_price), 1)
+                        usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
+
+                        xcurrency = round(float(currency_price) * xusd, 1)
+                        currency = str(f"{int(xcurrency):,d}") + "." + \
+                                   str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
+
+                        self.wallet_S_label.setText(_translate("Form", f"{self.zero_remover(usd)} $"))
+                        self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
             else:
-                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
-                                             "background: transparent;\n"
-                                             "color: rgb(0, 132, 0);")
-                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
-            old_btc_price = updated_btc_price
-
-        Table(f"Prevalues_{identity}").create()
-        if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-            value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
-            currency_price = value["currency_Price"]
-
-            if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
-                input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
-
-                input_wallet = input_wallet[1]
-
-                xusd = round(((float(input_wallet) * 0.00000001) * old_btc_price), 1)
-                usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
-
-                xcurrency = round(float(currency_price) * xusd, 1)
-                currency = str(f"{int(xcurrency):,d}") + "." + \
-                           str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
-
-                self.wallet_S_label.setText(
-                    _translate("Form", f"{self.zero_remover(usd)} $"))
-                self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
-        else:
+                pass
+        except Exception:
             pass
 
-    def user_wallet(self):  # wallet
+    def wal_event(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            input_wallet = str(self.input_wallet_balance.text()) if \
+                len(str(self.input_wallet_balance.text()).split(".")) == 1 else \
+                str(self.input_wallet_balance.text()).split(".")[0]
+            if len(str(self.input_wallet_balance.text()).split(",")) != 1:
+                input_wallet = "".join(str(self.input_wallet_balance.text()).split(","))
+
+            self.input_wallet_balance.setText(_translate("Form", f"{str(f'{int(input_wallet):,d}')}"))
+        except Exception:
+            pass
+
+    def user_wallet(self):
         global old_btc_price
         global identity
         _translate = QtCore.QCoreApplication.translate
+        wallet_ = str(self.input_wallet_balance.text())
         try:
-            input_wallet = str(self.input_wallet_balance.text())
-            now = datetime.datetime.now()
-            _btc_ = old_btc_price
-            currency_ = "SGD"
-            currency_price = 0
-            if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-                value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
-                currency_price = value["currency_Price"]
-                currency_ = value["currency"]
-                time_pass = value["time"]
-                pass_ = True if time_pass != now.day else False
-                pass_0 = False
-            else:
-                pass_ = True
-                pass_0 = True
+            if wallet_ == "":
+                input_wallet = "".join(wallet_).split(",")
+                now = datetime.datetime.now()
+                _btc_ = old_btc_price
+                currency_ = "SGD"
+                currency_price = 0
+                if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                    value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
+                    currency_price = value["currency_Price"]
+                    currency_ = value["currency"]
+                    time_pass = value["time"]
+                    pass_ = True if time_pass != now.day + 1 else False
+                    pass_0 = False
+                else:
+                    pass_ = True
+                    pass_0 = True
 
-            currency_price = API.currency_exchange(self.comboBox_currency.currentText()) if pass_0 else \
-                API.currency_exchange(currency_) if pass_ else currency_price
+                currency_price = API.currency_exchange(self.comboBox_currency.currentText()) if pass_0 else \
+                    API.currency_exchange(currency_) if pass_ else currency_price
 
-            if _btc_ is not None:
-                if input_wallet != "":
-
-                    Table(f"Prevalues_{identity}").create()
-                    if not Extract(f"Prevalues_{identity}").check_cell("Wallet"):
-                        Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).insert()
-                    else:
-                        Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).update()
-
-                    xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
-                    usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
-
-                    xcurrency = round(float(currency_price) * xusd, 1)
-                    currency = str(f"{int(xcurrency):,d}") + "." + \
-                               str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
-
-                    btc_ = round((float(input_wallet) * 0.00000001), 5)
-
-                    self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
-                    self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
-                    self.wallet_S_label.setText(
-                        _translate("Form", f"{self.zero_remover(usd)} $"))
-                    self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
-
-                    if pass_:
-                        data = {"currency_Price": currency_price,
-                                "currency": self.comboBox_currency.currentText(), "time": now.day}
-
-                        if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
-                            Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
+                if _btc_ is not None:
+                    if input_wallet != "":
+                        Table(f"Prevalues_{identity}").create()
+                        if not Extract(f"Prevalues_{identity}").check_cell("Wallet"):
+                            Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).insert()
                         else:
-                            Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
+                            Pre_values(f"Prevalues_{identity}", "Wallet", input_wallet).update()
+
+                        xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
+                        usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
+
+                        xcurrency = round(float(currency_price) * xusd, 1)
+                        currency = str(f"{int(xcurrency):,d}") + "." + \
+                                   str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
+
+                        btc_ = round((float(input_wallet) * 0.00000001), 5)
+
+                        self.wallet_sato_label.setText(_translate("Form", f"{int(input_wallet):,d} sat"))
+                        self.wallet_btc_label.setText(_translate("Form", f"{btc_} ₿"))
+                        self.wallet_S_label.setText(
+                            _translate("Form", f"{self.zero_remover(usd)} $"))
+                        self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
+
+                        if pass_:
+                            data = {"currency_Price": currency_price,
+                                    "currency": self.comboBox_currency.currentText(), "time": now.day}
+
+                            if not Extract(f"Prevalues_{identity}").check_cell("currency_api"):
+                                Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).insert()
+                            else:
+                                Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
+                else:
+                    pass
             else:
                 pass
 
-        except Exception as e:
-            print("user wallet ", e)
+        except Exception:
+            pass
 
     @staticmethod
     def zero_remover(value):
-        if len(str(value).split('.')) >= 2:
-            return value if str(value).split('.')[1] != '0' else str(value).split('.')[0]
-        else:
-            return value
+        try:
+            if len(str(value).split('.')) >= 2:
+                return value if str(value).split('.')[1] != '0' else str(value).split('.')[0]
+            else:
+                return value
+        except Exception:
+            pass
 
     def zero_remover_amount(self, amount):
-        sign, value = amount.split(" ")
-        return f"{sign} {self.zero_remover(value)}"
+        try:
+            sign, value = amount.split(" ")
+            return f"{sign} {self.zero_remover(value)}"
+        except Exception:
+            pass
 
     @staticmethod
     def small_value(value):
-        pass_ = str(value).split("-")
-        if pass_[0] != "":
-            if len(str(value).split("-")) >= 2:
-                zero = ""
-                for i in range(int(pass_[1])):
-                    zero += "0"
-                return f"0.{zero}{pass_[0].split('e')[0]}"
+        """ handling very small values, from 1e-05 to 0.000005. """
+        try:
+            pass_ = str(value).split("-")
+            if pass_[0] != "":
+                if len(str(value).split("-")) >= 2:
+                    zero = ""
+                    for i in range(int(pass_[1])):
+                        zero += "0"
+                    return f"0.{zero}{pass_[0].split('e')[0]}"
+                else:
+                    return value
             else:
-                return value
-        else:
-            if len(pass_[1].split("e")) >= 2:
-                zero = ""
-                for i in range(int(pass_[2])):
-                    zero += "0"
-                return f"-0.{zero}{pass_[1].split('e')[0]}"
-            else:
-                return value
+                if len(pass_[1].split("e")) >= 2:
+                    zero = ""
+                    for i in range(int(pass_[2])):
+                        zero += "0"
+                    return f"-0.{zero}{pass_[1].split('e')[0]}"
+                else:
+                    return value
+        except Exception:
+            pass
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
@@ -1046,6 +1147,7 @@ class Ui_Form(object):
         self.input_wallet_balance.setText("")
         self.input_wallet_balance.setAlignment(QtCore.Qt.AlignCenter)
         self.input_wallet_balance.setObjectName("input_wallet_balance")
+        self.input_wallet_balance.textEdited.connect(self.wal_event)
         self.input_wallet_balance.returnPressed.connect(self.user_wallet)
         # =====================
 
@@ -1066,6 +1168,7 @@ class Ui_Form(object):
                                         "}")
         self.input_modify.setText("")
         self.input_modify.setAlignment(QtCore.Qt.AlignCenter)
+        self.input_modify.textEdited.connect(self.mod_event)
         self.input_modify.setObjectName("input_modify")
         self.pushButton_4 = QtWidgets.QPushButton(self.frame_5)
         self.pushButton_4.setEnabled(False)
@@ -1197,6 +1300,7 @@ class Ui_Form(object):
         self.btn_SELL_modify.setIcon(icon1)
         self.btn_SELL_modify.setObjectName("btn_SELL_modify")
         self.btn_SELL_modify.clicked.connect(self.modify_sell)
+
         self.label_32 = QtWidgets.QLabel(self.frame_5)
         self.label_32.setGeometry(QtCore.QRect(20, 620, 71, 32))
         self.label_32.setStyleSheet("")
@@ -1433,99 +1537,21 @@ class Ui_Form(object):
                                                          "color: rgb(0, 132, 0);\n"
                                                          "background: transparent;")
         self.preformance_pure_profit_label.setObjectName("preformance_pure_profit_label")
-        self.listWidget_preformance = QtWidgets.QListWidget(self.tab_3)
-        self.listWidget_preformance.setGeometry(QtCore.QRect(1118, 154, 161, 534))
-        self.listWidget_preformance.setStyleSheet("* {\n"
-                                                  "    show-decoration-selected: 1;\n"
-                                                  "    selection-color: white;\n"
-                                                  "    selection-background-color: rgb(132,88, 0);\n"
-                                                  "    font: 11pt \"Bahnschrift\";\n"
-                                                  "    color: rgb(255, 255, 255);\n"
-                                                  "    background-color: rgb(0, 0, 0);\n"
-                                                  "\n"
-                                                  "    \n"
-                                                  "}\n"
-                                                  "\n"
-                                                  "QListView::item:selected:active:hover{\n"
-                                                  "    background-color:rgb(211, 211, 211); \n"
-                                                  "    color: black;\n"
-                                                  "}\n"
-                                                  "QListView::item:selected:active:!hover{\n"
-                                                  "     background-color: rgb(211, 211, 211); \n"
-                                                  "   \n"
-                                                  "    color: rgb(0, 0, 0);\n"
-                                                  "\n"
-                                                  "}\n"
-                                                  "QListView::item:selected:!active{\n"
-                                                  "    background-color:rgb(163, 163, 163); \n"
-                                                  "   \n"
-                                                  "    color: rgb(0, 0, 0);\n"
-                                                  "}\n"
-                                                  "QListView::item:!selected:hover{\n"
-                                                  "   background-color:rgb(0, 0, 0); \n"
-                                                  "    background-color: rgb(125, 83, 0);\n"
-                                                  "    color: rgb(255, 255, 255);\n"
-                                                  "}\n"
-                                                  "\n"
-                                                  "QScrollBar:vertical {              \n"
-                                                  "  border: none;\n"
-                                                  "  background:rgb(0, 0, 0);\n"
-                                                  "  width:8px;\n"
-                                                  "  margin: 0px 0px 0px 0px;\n"
-                                                  "        }\n"
-                                                  "QScrollBar::handle:vertical {\n"
-                                                  "background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, "
-                                                  "stop:0.820896 rgba(200, 117, 17, 255), stop:1 "
-                                                  "rgba(255, 255, 255, 255));\n"
-                                                  "            min-height: 0px;\n"
-                                                  "        }\n"
-                                                  "QScrollBar::add-line:vertical {\n"
-                                                  "            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,\n"
-                                                  "            stop: 0 rgb(32, 47, 130), stop: 0.5 rgb(32, 47, 130),  "
-                                                  "stop:1 rgb(32, 47, 130));\n"
-                                                  "\n"
-                                                  "            height: 0px;\n"
-                                                  "            subcontrol-position: bottom;\n"
-                                                  "            subcontrol-origin: margin;\n"
-                                                  "        }\n"
-                                                  "QScrollBar::sub-line:vertical {\n"
-                                                  "            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,\n"
-                                                  "            stop: 0  rgb(32, 47, 130), stop: 0.5 rgb(32, 47, 130),  "
-                                                  "stop:1 rgb(32, 47, 130));\n"
-                                                  "            height: 0 px;\n"
-                                                  "            subcontrol-position: top;\n"
-                                                  "            subcontrol-origin: margin;\n"
-                                                  "        }\n"
-                                                  "\n"
-                                                  "QScrollBar::down-arrow:vertical {\n"
-                                                  "                        image:url(:/images/Images/S.png);\n"
-                                                  "                        height: 40px; \n"
-                                                  "                        width: 40px                              \n"
-                                                  "                      }\n"
-                                                  "")
-        self.listWidget_preformance.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.listWidget_preformance.setFrameShadow(QtWidgets.QFrame.Plain)
-        self.listWidget_preformance.setLineWidth(1)
-        self.listWidget_preformance.setIconSize(QtCore.QSize(0, 0))
-        self.listWidget_preformance.setTextElideMode(QtCore.Qt.ElideNone)
-        self.listWidget_preformance.setMovement(QtWidgets.QListView.Static)
-        self.listWidget_preformance.setProperty("isWrapping", False)
-        self.listWidget_preformance.setResizeMode(QtWidgets.QListView.Adjust)
-        self.listWidget_preformance.setLayoutMode(QtWidgets.QListView.SinglePass)
-        self.listWidget_preformance.setViewMode(QtWidgets.QListView.ListMode)
-        self.listWidget_preformance.setModelColumn(0)
-        self.listWidget_preformance.setUniformItemSizes(False)
-        self.listWidget_preformance.setBatchSize(100)
-        self.listWidget_preformance.setWordWrap(True)
-        self.listWidget_preformance.setSelectionRectVisible(True)
-        self.listWidget_preformance.setItemAlignment(QtCore.Qt.AlignHCenter)
-        self.listWidget_preformance.setObjectName("listWidget_preformance")
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_preformance.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_preformance.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_preformance.addItem(item)
+        # ===============================================================================
+
+        self.comboBox2_historical_data_2 = QtWidgets.QComboBox(self.tab_3)
+        self.comboBox2_historical_data_2.setGeometry(QtCore.QRect(1130, 160, 141, 21))
+        self.comboBox2_historical_data_2.setStyleSheet(
+            "color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0.373134 rgba(255, 255, 255, 255));\n"
+            "\n"
+            "selection-background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0.097,"
+            " stop:0.771144 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
+            "color: rgb(255, 255, 255);\n"
+            "background-color: rgb(0, 0, 0);\n"
+            "font: 11pt \"Bahnschrift\";")
+        self.comboBox2_historical_data_2.setObjectName("comboBox2_historical_data_2")
+        self.comboBox2_historical_data_2.currentIndexChanged.connect(self.combo_box_graph)
+        # ==============================================================================
         self.line_15 = QtWidgets.QFrame(self.tab_3)
         self.line_15.setGeometry(QtCore.QRect(763, 690, 2, 35))
         self.line_15.setStyleSheet("\n"
@@ -1663,7 +1689,9 @@ class Ui_Form(object):
         self.note_TextEdit.setTabChangesFocus(False)
         self.note_TextEdit.setOverwriteMode(False)
         self.note_TextEdit.setBackgroundVisible(False)
+
         self.note_TextEdit.setObjectName("note_TextEdit")
+        # =========================================
         self.listWidget_Note = QtWidgets.QListWidget(self.tab_2)
         self.listWidget_Note.setGeometry(QtCore.QRect(10, 125, 271, 731))
         self.listWidget_Note.setStyleSheet("QListView {\n"
@@ -1751,10 +1779,9 @@ class Ui_Form(object):
         self.listWidget_Note.setWordWrap(True)
         self.listWidget_Note.setSelectionRectVisible(True)
         self.listWidget_Note.setObjectName("listWidget_Note")
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_Note.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_Note.addItem(item)
+        self.listWidget_Note.itemActivated.connect(self.notes)
+
+        # ========================================
         self.line_5 = QtWidgets.QFrame(self.tab_2)
         self.line_5.setGeometry(QtCore.QRect(292, 0, 5, 860))
         self.line_5.setStyleSheet("background-color: rgb(0, 0, 0);")
@@ -1789,6 +1816,7 @@ class Ui_Form(object):
                                         "background-color: #333;\n"
                                         "}")
         self.note_btn_add.setText("")
+        self.note_btn_add.clicked.connect(self.new_title)
         self.note_btn_add.setObjectName("note_btn_add")
         self.note_input_add = QtWidgets.QLineEdit(self.tab_2)
         self.note_input_add.setGeometry(QtCore.QRect(20, 20, 231, 31))
@@ -1850,6 +1878,7 @@ class Ui_Form(object):
                                            "background-color: #333;\n"
                                            "}")
         self.note_btn_search.setText("")
+        self.note_btn_search.clicked.connect(self.search_note)
         self.note_btn_search.setObjectName("note_btn_search")
         self.frame = QtWidgets.QFrame(self.tab_2)
         self.frame.setGeometry(QtCore.QRect(309, 10, 991, 41))
@@ -1908,6 +1937,7 @@ class Ui_Form(object):
         icon6.addPixmap(QtGui.QPixmap(":/images/Images/icons8-delete-file-26.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.note_btn_delete.setIcon(icon6)
         self.note_btn_delete.setFlat(True)
+        self.note_btn_delete.clicked.connect(self.del_note)
         self.note_btn_delete.setObjectName("note_btn_delete")
         self.note_btn_save = QtWidgets.QPushButton(self.frame)
         self.note_btn_save.setGeometry(QtCore.QRect(680, 0, 31, 41))
@@ -1939,6 +1969,7 @@ class Ui_Form(object):
         icon7.addPixmap(QtGui.QPixmap(":/images/Images/saveb.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.note_btn_save.setIcon(icon7)
         self.note_btn_save.setFlat(True)
+        self.note_btn_save.clicked.connect(self.save_note)
         self.note_btn_save.setObjectName("note_btn_save")
         self.line_27 = QtWidgets.QFrame(self.tab_2)
         self.line_27.setGeometry(QtCore.QRect(1310, 0, 3, 856))
@@ -1949,397 +1980,8 @@ class Ui_Form(object):
         icon8.addPixmap(QtGui.QPixmap(":/images/Images/note.png"), QtGui.QIcon.Selected, QtGui.QIcon.Off)
         icon8.addPixmap(QtGui.QPixmap(":/images/Images/note.png"), QtGui.QIcon.Selected, QtGui.QIcon.On)
         self.tabWidget.addTab(self.tab_2, icon8, "")
-        self.tab_4 = QtWidgets.QWidget()
-        self.tab_4.setObjectName("tab_4")
-        self.line_13 = QtWidgets.QFrame(self.tab_4)
-        self.line_13.setGeometry(QtCore.QRect(0, 0, 1313, 2))
-        self.line_13.setStyleSheet("background-color: rgb(0, 0, 0);")
-        self.line_13.setFrameShape(QtWidgets.QFrame.HLine)
-        self.line_13.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.line_13.setObjectName("line_13")
-        self.toolBox = QtWidgets.QToolBox(self.tab_4)
-        self.toolBox.setGeometry(QtCore.QRect(2, 3, 1307, 852))
-        self.toolBox.setStyleSheet("*{\n"
-                                   "color: rgb(255, 255, 255);\n"
-                                   "    \n"
-                                   "font: 75 12pt \"Bahnschrift\";\n"
-                                   "border-width: 0px;\n"
-                                   "}\n"
-                                   "\n"
-                                   "\n"
-                                   "QToolBox::tab:selected {\n"
-                                   "background: qlineargradient(spread:pad, x1:0.423, y1:0.625, x2:0.99005, "
-                                   "y2:0.188, stop:0 rgba(124, 119, 119, 255), stop:1 rgba(255, 255, 255, 255));\n"
-                                   "color: rgb(0, 0, 0);\n"
-                                   "}\n"
-                                   "\n"
-                                   "QToolBox::tab{\n"
-                                   "background: rgb(88,88, 88);\n"
-                                   "\n"
-                                   "}")
-        self.toolBox.setObjectName("toolBox")
-        self.page_3 = QtWidgets.QWidget()
-        self.page_3.setGeometry(QtCore.QRect(0, 0, 1307, 774))
-        self.page_3.setObjectName("page_3")
-        self.historical_data_graph_frame = QtWidgets.QFrame(self.page_3)
-        self.historical_data_graph_frame.setGeometry(QtCore.QRect(40, 140, 1058, 561))
-        self.historical_data_graph_frame.setStyleSheet("background-color: rgb(0, 0, 0);")
-        self.historical_data_graph_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.historical_data_graph_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.historical_data_graph_frame.setObjectName("historical_data_graph_frame")
-        self.comboBox1_historical_data = QtWidgets.QComboBox(self.page_3)
-        self.comboBox1_historical_data.setGeometry(QtCore.QRect(1100, 50, 161, 22))
-        self.comboBox1_historical_data.setStyleSheet(
-            "color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0.373134 rgba(255, 255, 255, 255));\n"
-            "\n"
-            "selection-background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0.097, "
-            "stop:0.771144 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
-            "color: rgb(255, 255, 255);\n"
-            "background-color: rgb(0, 0, 0);\n"
-            "font: 11pt \"Bahnschrift\";")
-        self.comboBox1_historical_data.setObjectName("comboBox1_historical_data")
-        self.comboBox1_historical_data.addItem("")
-        self.comboBox1_historical_data.addItem("")
-        self.comboBox1_historical_data.addItem("")
-        self.label_18 = QtWidgets.QLabel(self.page_3)
-        self.label_18.setGeometry(QtCore.QRect(40, 110, 1058, 31))
-        self.label_18.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                    "font: 11pt \"Bahnschrift\";")
-        self.label_18.setAlignment(QtCore.Qt.AlignCenter)
-        self.label_18.setObjectName("label_18")
-        self.historical_data_year_label = QtWidgets.QLabel(self.page_3)
-        self.historical_data_year_label.setGeometry(QtCore.QRect(40, 80, 91, 35))
-        self.historical_data_year_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                                      "color: rgb(255, 255, 255);\n"
-                                                      "font: 14pt \"Bahnschrift\";\n"
-                                                      "border-radius:8px;")
-        self.historical_data_year_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.historical_data_year_label.setObjectName("historical_data_year_label")
-        self.listWidget_btc_historical_data = QtWidgets.QListWidget(self.page_3)
-        self.listWidget_btc_historical_data.setGeometry(QtCore.QRect(1100, 110, 161, 591))
-        self.listWidget_btc_historical_data.setStyleSheet("QListView {\n"
-                                                          "   show-decoration-selected: 1;\n"
-                                                          "selection-color: white;\n"
-                                                          "    selection-background-color: rgb(132,88, 0);\n"
-                                                          "font: 11pt \"Bahnschrift\";\n"
-                                                          "color: rgb(255, 255, 255);\n"
-                                                          "background: rgb(0, 0, 0);\n"
-                                                          "    \n"
-                                                          "}\n"
-                                                          "\n"
-                                                          "QListView::item:selected:active:hover{\n"
-                                                          "    background-color:rgb(211, 211, 211); \n"
-                                                          "    color: black;\n"
-                                                          "}\n"
-                                                          "QListView::item:selected:active:!hover{\n"
-                                                          "     background-color: rgb(211, 211, 211); \n"
-                                                          "   \n"
-                                                          "    color: rgb(0, 0, 0);\n"
-                                                          "}\n"
-                                                          "QListView::item:selected:!active{\n"
-                                                          "    background-color:rgb(163, 163, 163); \n"
-                                                          "   \n"
-                                                          "    color: rgb(0, 0, 0);\n"
-                                                          "}\n"
-                                                          "QListView::item:!selected:hover{ \n"
-                                                          " background-color:rgb(198, 132, 0); \n"
-                                                          "  color: rgb(255, 255, 255);\n"
-                                                          " color: rgb(0, 0, 0);\n"
-                                                          "}\n"
-                                                          "\n"
-                                                          "QScrollBar:vertical {              \n"
-                                                          "  border: none;\n"
-                                                          "  background:rgb(0, 0, 0);\n"
-                                                          "  width:8px;\n"
-                                                          "  margin: 0px 0px 0px 0px;\n"
-                                                          "        }\n"
-                                                          "QScrollBar::handle:vertical {\n"
-                                                          "background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0.820896 rgba(200, 117, 17, 255), stop:1 rgba(255, 255, 255, 255));\n"
-                                                          "            min-height: 0px;\n"
-                                                          "        }\n"
-                                                          "QScrollBar::add-line:vertical {\n"
-                                                          "            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,\n"
-                                                          "            stop: 0 rgb(32, 47, 130), stop: 0.5 rgb(32, 47, 130),  stop:1 rgb(32, 47, 130));\n"
-                                                          "\n"
-                                                          "            height: 0px;\n"
-                                                          "            subcontrol-position: bottom;\n"
-                                                          "            subcontrol-origin: margin;\n"
-                                                          "        }\n"
-                                                          "QScrollBar::sub-line:vertical {\n"
-                                                          "            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,\n"
-                                                          "            stop: 0  rgb(32, 47, 130), stop: 0.5 rgb(32, 47, 130),  stop:1 rgb(32, 47, 130));\n"
-                                                          "            height: 0 px;\n"
-                                                          "            subcontrol-position: top;\n"
-                                                          "            subcontrol-origin: margin;\n"
-                                                          "        }\n"
-                                                          "\n"
-                                                          "QScrollBar::down-arrow:vertical {\n"
-                                                          "                        /*image:url(:/images/Images/open-label.png);*/\n"
-                                                          "                        height: 40px; \n"
-                                                          "                        width: 40px                              \n"
-                                                          "                      }\n"
-                                                          "\n"
-                                                          "")
-        self.listWidget_btc_historical_data.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.listWidget_btc_historical_data.setFrameShadow(QtWidgets.QFrame.Plain)
-        self.listWidget_btc_historical_data.setLineWidth(1)
-        self.listWidget_btc_historical_data.setIconSize(QtCore.QSize(0, 0))
-        self.listWidget_btc_historical_data.setTextElideMode(QtCore.Qt.ElideNone)
-        self.listWidget_btc_historical_data.setMovement(QtWidgets.QListView.Static)
-        self.listWidget_btc_historical_data.setProperty("isWrapping", False)
-        self.listWidget_btc_historical_data.setResizeMode(QtWidgets.QListView.Adjust)
-        self.listWidget_btc_historical_data.setLayoutMode(QtWidgets.QListView.SinglePass)
-        self.listWidget_btc_historical_data.setViewMode(QtWidgets.QListView.ListMode)
-        self.listWidget_btc_historical_data.setModelColumn(0)
-        self.listWidget_btc_historical_data.setUniformItemSizes(False)
-        self.listWidget_btc_historical_data.setWordWrap(True)
-        self.listWidget_btc_historical_data.setSelectionRectVisible(True)
-        self.listWidget_btc_historical_data.setObjectName("listWidget_btc_historical_data")
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_btc_historical_data.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_btc_historical_data.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_btc_historical_data.addItem(item)
-        item = QtWidgets.QListWidgetItem()
-        self.listWidget_btc_historical_data.addItem(item)
-        self.line_39 = QtWidgets.QFrame(self.page_3)
-        self.line_39.setGeometry(QtCore.QRect(1100, 110, 2, 591))
-        self.line_39.setStyleSheet("\n"
-                                   "background-color: rgb(184, 184, 0);")
-        self.line_39.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.line_39.setLineWidth(0)
-        self.line_39.setFrameShape(QtWidgets.QFrame.VLine)
-        self.line_39.setObjectName("line_39")
-        icon9 = QtGui.QIcon()
-        icon9.addPixmap(QtGui.QPixmap(":/images/Images/icons8-candlestick-chart-16.png"), QtGui.QIcon.Normal,
-                        QtGui.QIcon.On)
-        self.toolBox.addItem(self.page_3, icon9, "")
-        self.page_4 = QtWidgets.QWidget()
-        self.page_4.setGeometry(QtCore.QRect(0, 0, 1307, 774))
-        self.page_4.setObjectName("page_4")
-        self.stackedWidget = QtWidgets.QStackedWidget(self.page_4)
-        self.stackedWidget.setGeometry(QtCore.QRect(20, 0, 1251, 751))
-        self.stackedWidget.setStyleSheet("*{\n"
-                                         "color: rgb(255, 255, 255);\n"
-                                         "background: transparent;\n"
-                                         "    \n"
-                                         "}\n"
-                                         "\n"
-                                         "")
-        self.stackedWidget.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.stackedWidget.setFrameShadow(QtWidgets.QFrame.Plain)
-        self.stackedWidget.setObjectName("stackedWidget")
-        self.page_2 = QtWidgets.QWidget()
-        self.page_2.setObjectName("page_2")
-        self.BH_jan_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_jan_frame.setGeometry(QtCore.QRect(10, 80, 291, 191))
-        self.BH_jan_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_jan_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_jan_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_jan_frame.setObjectName("BH_jan_frame")
-        self.BH_may_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_may_frame.setGeometry(QtCore.QRect(10, 310, 291, 191))
-        self.BH_may_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_may_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_may_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_may_frame.setObjectName("BH_may_frame")
-        self.BH_sep_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_sep_frame.setGeometry(QtCore.QRect(10, 550, 291, 191))
-        self.BH_sep_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_sep_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_sep_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_sep_frame.setObjectName("BH_sep_frame")
-        self.BH_feb_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_feb_frame.setGeometry(QtCore.QRect(320, 80, 291, 191))
-        self.BH_feb_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_feb_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_feb_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_feb_frame.setObjectName("BH_feb_frame")
-        self.BH_mar_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_mar_frame.setGeometry(QtCore.QRect(630, 80, 291, 191))
-        self.BH_mar_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_mar_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_mar_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_mar_frame.setObjectName("BH_mar_frame")
-        self.BH_june_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_june_frame.setGeometry(QtCore.QRect(320, 310, 291, 191))
-        self.BH_june_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                         "border-radius:8px;")
-        self.BH_june_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_june_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_june_frame.setObjectName("BH_june_frame")
-        self.BH_july_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_july_frame.setGeometry(QtCore.QRect(630, 310, 291, 191))
-        self.BH_july_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                         "border-radius:8px;")
-        self.BH_july_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_july_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_july_frame.setObjectName("BH_july_frame")
-        self.BH_oct_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_oct_frame.setGeometry(QtCore.QRect(320, 550, 291, 191))
-        self.BH_oct_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_oct_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_oct_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_oct_frame.setObjectName("BH_oct_frame")
-        self.BH_nov_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_nov_frame.setGeometry(QtCore.QRect(630, 550, 291, 191))
-        self.BH_nov_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_nov_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_nov_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_nov_frame.setObjectName("BH_nov_frame")
-        self.BH_apr_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_apr_frame.setGeometry(QtCore.QRect(940, 80, 291, 191))
-        self.BH_apr_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_apr_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_apr_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_apr_frame.setObjectName("BH_apr_frame")
-        self.BH_aug_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_aug_frame.setGeometry(QtCore.QRect(940, 310, 291, 191))
-        self.BH_aug_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_aug_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_aug_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_aug_frame.setObjectName("BH_aug_frame")
-        self.BH_dec_frame = QtWidgets.QFrame(self.page_2)
-        self.BH_dec_frame.setGeometry(QtCore.QRect(940, 550, 291, 191))
-        self.BH_dec_frame.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "border-radius:8px;")
-        self.BH_dec_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.BH_dec_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.BH_dec_frame.setObjectName("BH_dec_frame")
-        self.BH_jan_label = QtWidgets.QLabel(self.page_2)
-        self.BH_jan_label.setGeometry(QtCore.QRect(10, 54, 131, 36))
-        self.BH_jan_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_jan_label.setObjectName("BH_jan_label")
-        self.BH_feb_label = QtWidgets.QLabel(self.page_2)
-        self.BH_feb_label.setGeometry(QtCore.QRect(320, 54, 131, 36))
-        self.BH_feb_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_feb_label.setObjectName("BH_feb_label")
-        self.BH_mar_label = QtWidgets.QLabel(self.page_2)
-        self.BH_mar_label.setGeometry(QtCore.QRect(630, 54, 131, 36))
-        self.BH_mar_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_mar_label.setObjectName("BH_mar_label")
-        self.BH_apr_label = QtWidgets.QLabel(self.page_2)
-        self.BH_apr_label.setGeometry(QtCore.QRect(940, 54, 131, 36))
-        self.BH_apr_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_apr_label.setObjectName("BH_apr_label")
-        self.BH_may_label = QtWidgets.QLabel(self.page_2)
-        self.BH_may_label.setGeometry(QtCore.QRect(10, 284, 131, 36))
-        self.BH_may_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_may_label.setObjectName("BH_may_label")
-        self.BH_june_label = QtWidgets.QLabel(self.page_2)
-        self.BH_june_label.setGeometry(QtCore.QRect(320, 284, 131, 36))
-        self.BH_june_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                         "color: rgb(255, 255, 255);\n"
-                                         "font: 10pt \"Bahnschrift\";\n"
-                                         "border-radius:8px;")
-        self.BH_june_label.setObjectName("BH_june_label")
-        self.BH_july_label = QtWidgets.QLabel(self.page_2)
-        self.BH_july_label.setGeometry(QtCore.QRect(630, 284, 131, 36))
-        self.BH_july_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                         "color: rgb(255, 255, 255);\n"
-                                         "font: 10pt \"Bahnschrift\";\n"
-                                         "border-radius:8px;")
-        self.BH_july_label.setObjectName("BH_july_label")
-        self.BH_aug_label = QtWidgets.QLabel(self.page_2)
-        self.BH_aug_label.setGeometry(QtCore.QRect(940, 284, 131, 36))
-        self.BH_aug_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_aug_label.setObjectName("BH_aug_label")
-        self.BH_sep_label = QtWidgets.QLabel(self.page_2)
-        self.BH_sep_label.setGeometry(QtCore.QRect(10, 524, 131, 36))
-        self.BH_sep_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_sep_label.setObjectName("BH_sep_label")
-        self.BH_oct_label = QtWidgets.QLabel(self.page_2)
-        self.BH_oct_label.setGeometry(QtCore.QRect(320, 524, 131, 36))
-        self.BH_oct_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_oct_label.setObjectName("BH_oct_label")
-        self.BH_nov_label = QtWidgets.QLabel(self.page_2)
-        self.BH_nov_label.setGeometry(QtCore.QRect(630, 524, 131, 36))
-        self.BH_nov_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_nov_label.setObjectName("BH_nov_label")
-        self.BH_dec_label = QtWidgets.QLabel(self.page_2)
-        self.BH_dec_label.setGeometry(QtCore.QRect(940, 524, 131, 36))
-        self.BH_dec_label.setStyleSheet("background-color: rgb(0, 0, 0);\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "font: 10pt \"Bahnschrift\";\n"
-                                        "border-radius:8px;")
-        self.BH_dec_label.setObjectName("BH_dec_label")
-        self.comboBox2_historical_data = QtWidgets.QComboBox(self.page_2)
-        self.comboBox2_historical_data.setGeometry(QtCore.QRect(1076, 8, 111, 21))
-        self.comboBox2_historical_data.setStyleSheet(
-            "color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0.373134 rgba(255, 255, 255, 255));\n"
-            "\n"
-            "selection-background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, "
-            "y2:0.097, stop:0.771144 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
-            "color: rgb(255, 255, 255);\n"
-            "background-color: rgb(0, 0, 0);\n"
-            "font: 11pt \"Bahnschrift\";")
-        self.comboBox2_historical_data.setObjectName("comboBox2_historical_data")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.comboBox2_historical_data.addItem("")
-        self.label_76 = QtWidgets.QLabel(self.page_2)
-        self.label_76.setGeometry(QtCore.QRect(1020, 0, 41, 31))
-        self.label_76.setStyleSheet("background: transparent;\n"
-                                    "font: 12pt \"Bahnschrift\";")
-        self.label_76.setObjectName("label_76")
-        self.stackedWidget.addWidget(self.page_2)
-        icon10 = QtGui.QIcon()
-        icon10.addPixmap(QtGui.QPixmap(":/images/Images/icons8-active-directory-26 (1).png"), QtGui.QIcon.Normal,
-                         QtGui.QIcon.On)
-        self.toolBox.addItem(self.page_4, icon10, "")
-        self.line_26 = QtWidgets.QFrame(self.tab_4)
-        self.line_26.setGeometry(QtCore.QRect(1310, 0, 3, 856))
-        self.line_26.setFrameShape(QtWidgets.QFrame.VLine)
-        self.line_26.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.line_26.setObjectName("line_26")
-        icon11 = QtGui.QIcon()
-        icon11.addPixmap(QtGui.QPixmap(":/images/Images/icons8-candlestick-chart-26.png"), QtGui.QIcon.Normal,
-                         QtGui.QIcon.On)
-        self.tabWidget.addTab(self.tab_4, icon11, "")
+
+        # =======================================
         self.tab_5 = QtWidgets.QWidget()
         self.tab_5.setObjectName("tab_5")
         self.about_btn = QtWidgets.QPushButton(self.tab_5)
@@ -2362,7 +2004,8 @@ class Ui_Form(object):
                                      "\n"
                                      "    color: rgb(255, 255, 255);\n"
                                      "background-color: rgb(83, 83, 83);\n"
-                                     "background:qlineargradient(spread:pad, x1:0.443, y1:0.670545, x2:0, y2:0.801, stop:0 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
+                                     "background:qlineargradient(spread:pad, x1:0.443, y1:0.670545, x2:0, y2:0.801,"
+                                     " stop:0 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
                                      "border-radius:10px;\n"
                                      "font: 75 10pt \"MS Shell Dlg 2\";\n"
                                      "}\n"
@@ -2374,7 +2017,7 @@ class Ui_Form(object):
                                      "}")
         self.about_btn.setObjectName("about_btn")
         self.import_btn = QtWidgets.QPushButton(self.tab_5)
-        self.import_btn.setGeometry(QtCore.QRect(20, 160, 101, 31))
+        self.import_btn.setGeometry(QtCore.QRect(20, 160, 111, 31))
         self.import_btn.setStyleSheet("*{\n"
                                       "color: rgb(211, 211, 211);\n"
                                       "}\n"
@@ -2412,6 +2055,7 @@ class Ui_Form(object):
         icon12.addPixmap(QtGui.QPixmap(":/images/Images/icons8-data-backup-26 (1).png"), QtGui.QIcon.Normal,
                          QtGui.QIcon.On)
         self.import_btn.setIcon(icon12)
+        self.import_btn.clicked.connect(self.import_init)
         self.import_btn.setObjectName("import_btn")
         self.progressBar_download = QtWidgets.QProgressBar(self.tab_5)
         self.progressBar_download.setGeometry(QtCore.QRect(130, 80, 301, 31))
@@ -2434,7 +2078,7 @@ class Ui_Form(object):
                                                 "}\n"
                                                 "\n"
                                                 "")
-        self.progressBar_download.setProperty("value", 20)
+        self.progressBar_download.setProperty("value", 0)
         self.progressBar_download.setAlignment(QtCore.Qt.AlignCenter)
         self.progressBar_download.setTextVisible(True)
         self.progressBar_download.setOrientation(QtCore.Qt.Horizontal)
@@ -2483,6 +2127,8 @@ class Ui_Form(object):
         icon13.addPixmap(QtGui.QPixmap(":/images/Images/icons8-download-26.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.download_btn.setIcon(icon13)
         self.download_btn.setObjectName("download_btn")
+        self.download_btn.clicked.connect(self.download_thread)
+
         self.progressBar_import = QtWidgets.QProgressBar(self.tab_5)
         self.progressBar_import.setGeometry(QtCore.QRect(130, 160, 301, 31))
         self.progressBar_import.setStyleSheet("*{font: 9pt \"MV Boli\";\n"
@@ -2504,7 +2150,7 @@ class Ui_Form(object):
                                               "}\n"
                                               "\n"
                                               "")
-        self.progressBar_import.setProperty("value", 20)
+        self.progressBar_import.setProperty("value", 0)
         self.progressBar_import.setAlignment(QtCore.Qt.AlignCenter)
         self.progressBar_import.setTextVisible(True)
         self.progressBar_import.setOrientation(QtCore.Qt.Horizontal)
@@ -2592,12 +2238,14 @@ class Ui_Form(object):
         self.radioButton_ordersize.setGeometry(QtCore.QRect(610, 150, 121, 21))
         self.radioButton_ordersize.setStyleSheet("background: transparent;\n"
                                                  "font: 10pt \"Bahnschrift\";")
+        self.radioButton_ordersize.toggled.connect(self.order_input_off)
         self.radioButton_ordersize.setObjectName("radioButton_ordersize")
         self.radioButton_risk = QtWidgets.QRadioButton(self.tab_5)
         self.radioButton_risk.setGeometry(QtCore.QRect(770, 150, 111, 21))
         self.radioButton_risk.setStyleSheet("background: transparent;\n"
                                             "font: 10pt \"Bahnschrift\";")
         self.radioButton_risk.setObjectName("radioButton_risk")
+        self.radioButton_risk.toggled.connect(self.order_input_off)
         self.radioButton_stop = QtWidgets.QRadioButton(self.tab_5)
         self.radioButton_stop.setGeometry(QtCore.QRect(910, 150, 95, 21))
         self.radioButton_stop.setStyleSheet("background: transparent;\n"
@@ -2706,6 +2354,7 @@ class Ui_Form(object):
         icon15 = QtGui.QIcon()
         icon15.addPixmap(QtGui.QPixmap(":/images/Images/icons8-calculator-26.png"), QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.Calc_btn_1.setIcon(icon15)
+        self.Calc_btn_1.clicked.connect(self.order_calc)
         self.Calc_btn_1.setObjectName("Calc_btn_1")
         self.convert_input = QtWidgets.QLineEdit(self.tab_5)
         self.convert_input.setGeometry(QtCore.QRect(710, 786, 201, 21))
@@ -2717,6 +2366,7 @@ class Ui_Form(object):
                                          "}")
         self.convert_input.setText("")
         self.convert_input.setAlignment(QtCore.Qt.AlignCenter)
+        self.convert_input.returnPressed.connect(self.btc_to_sato)
         self.convert_input.setObjectName("convert_input")
         self.radioButton_Riskpercentage_left = QtWidgets.QRadioButton(self.tab_5)
         self.radioButton_Riskpercentage_left.setGeometry(QtCore.QRect(610, 590, 149, 20))
@@ -2925,6 +2575,7 @@ class Ui_Form(object):
                                       "background-color: #333;\n"
                                       "}")
         self.Calc_btn_2.setIcon(icon15)
+        self.Calc_btn_2.clicked.connect(self.profit_calc)
         self.Calc_btn_2.setObjectName("Calc_btn_2")
         self.line_20 = QtWidgets.QFrame(self.tab_5)
         self.line_20.setGeometry(QtCore.QRect(570, 374, 3, 483))
@@ -2976,73 +2627,12 @@ class Ui_Form(object):
         self.pushButton_12.setChecked(False)
         self.pushButton_12.setFlat(True)
         self.pushButton_12.setObjectName("pushButton_12")
-        self.label_62 = QtWidgets.QLabel(self.tab_5)
-        self.label_62.setGeometry(QtCore.QRect(20, 360, 291, 31))
-        self.label_62.setStyleSheet("background: transparent;")
-        self.label_62.setObjectName("label_62")
-        self.export_btn_2 = QtWidgets.QPushButton(self.tab_5)
-        self.export_btn_2.setEnabled(True)
-        self.export_btn_2.setGeometry(QtCore.QRect(230, 446, 111, 31))
-        self.export_btn_2.setStyleSheet("*{\n"
-                                        "color: rgb(211, 211, 211);\n"
-                                        "}\n"
-                                        "\n"
-                                        "QPushButton:hover{\n"
-                                        "color: rgb(255, 255, 255);\n"
-                                        "\n"
-                                        "    \n"
-                                        "background-color: rgb(100, 100, 100);\n"
-                                        "\n"
-                                        "}\n"
-                                        "\n"
-                                        "QPushButton{\n"
-                                        "border: 1px solid  #333;\n"
-                                        "background:  rgb(90, 90, 90);\n"
-                                        "border-radius:10px;\n"
-                                        "font: 75 9pt \"MS Shell Dlg 2\";\n"
-                                        "}\n"
-                                        "\n"
-                                        "\n"
-                                        "QPushButton:hover{\n"
-                                        "\n"
-                                        "color: rgb(225, 255, 255);\n"
-                                        "    background-color: rgb(66, 66, 66);\n"
-                                        "border-radius:10px;\n"
-                                        "font: 75 8pt \"MS Shell Dlg 2\";\n"
-                                        "}\n"
-                                        "\n"
-                                        "QPushButton:pressed \n"
-                                        "{\n"
-                                        " border: 2px inset   rgb(225, 225, 255);\n"
-                                        "background-color: #333;\n"
-                                        "}")
-        icon16 = QtGui.QIcon()
-        icon16.addPixmap(QtGui.QPixmap(":/images/Images/icons8-download-from-the-cloud-100.png"), QtGui.QIcon.Normal,
-                         QtGui.QIcon.On)
-        self.export_btn_2.setIcon(icon16)
-        self.export_btn_2.setObjectName("export_btn_2")
-        self.label_20 = QtWidgets.QLabel(self.tab_5)
-        self.label_20.setGeometry(QtCore.QRect(20, 400, 331, 51))
-        self.label_20.setStyleSheet("background: transparent;")
-        self.label_20.setObjectName("label_20")
         self.line_23 = QtWidgets.QFrame(self.tab_5)
         self.line_23.setGeometry(QtCore.QRect(0, 351, 547, 3))
         self.line_23.setStyleSheet("background-color: rgb(0, 0, 0);")
         self.line_23.setFrameShape(QtWidgets.QFrame.HLine)
         self.line_23.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line_23.setObjectName("line_23")
-        self.line_24 = QtWidgets.QFrame(self.tab_5)
-        self.line_24.setGeometry(QtCore.QRect(0, 460, 221, 3))
-        self.line_24.setStyleSheet("background-color: rgb(0, 0, 0);")
-        self.line_24.setFrameShape(QtWidgets.QFrame.HLine)
-        self.line_24.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.line_24.setObjectName("line_24")
-        self.line_25 = QtWidgets.QFrame(self.tab_5)
-        self.line_25.setGeometry(QtCore.QRect(349, 460, 221, 3))
-        self.line_25.setStyleSheet("background-color: rgb(0, 0, 0);")
-        self.line_25.setFrameShape(QtWidgets.QFrame.HLine)
-        self.line_25.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self.line_25.setObjectName("line_25")
         self.comboBox_backup = QtWidgets.QComboBox(self.tab_5)
         self.comboBox_backup.setGeometry(QtCore.QRect(450, 84, 91, 22))
         self.comboBox_backup.setStyleSheet(
@@ -3079,15 +2669,22 @@ class Ui_Form(object):
         self.line.setFrameShape(QtWidgets.QFrame.VLine)
         self.line.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line.setObjectName("line")
-        self.down_bar_label = QtWidgets.QLabel(Form)
-        self.down_bar_label.setGeometry(QtCore.QRect(0, 888, 1599, 25))
-        self.down_bar_label.setStyleSheet("background:  rgb(51, 51, 51);")
-        self.down_bar_label.setFrameShape(QtWidgets.QFrame.Panel)
-        self.down_bar_label.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.down_bar_label.setLineWidth(1)
-        self.down_bar_label.setMidLineWidth(0)
-        self.down_bar_label.setIndent(20)
-        self.down_bar_label.setObjectName("down_bar_label")
+
+        self.frame_15 = QtWidgets.QFrame(Form)
+        self.frame_15.setGeometry(QtCore.QRect(0, 888, 1601, 25))
+        self.frame_15.setStyleSheet("background-color: rgb(55, 55, 55);")
+        self.frame_15.setFrameShape(QtWidgets.QFrame.Panel)
+        self.frame_15.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.frame_15.setObjectName("frame_15")
+        self.bottom_trade_label = QtWidgets.QLabel(self.frame_15)
+        self.bottom_trade_label.setGeometry(QtCore.QRect(280, 4, 311, 20))
+        self.bottom_trade_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.bottom_trade_label.setObjectName("bottom_trade_label")
+        self.data_size_label = QtWidgets.QLabel(self.frame_15)
+        self.data_size_label.setGeometry(QtCore.QRect(0, 0, 221, 20))
+        self.data_size_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.data_size_label.setObjectName("data_size_label")
+
         self.frame_4 = QtWidgets.QFrame(Form)
         self.frame_4.setGeometry(QtCore.QRect(0, 0, 281, 888))
         self.frame_4.setStyleSheet("*{background-image: url(:/images/Images/profile_bg.png);\n"
@@ -3129,19 +2726,20 @@ class Ui_Form(object):
 
         if len(image_format) != 0:
             image = image_format.split("\\")[1]
-            image_url = f"background-image: url(Images/{image});"
+            self.image_label.setStyleSheet("border-radius:50px;\n"
+                                           "\n"
+                                           "background-color: rgb(10, 10, 10);\n"
+                                           f"background-image: url(Images/{image});"
+                                           "background-repeat: no-repeat; "
+                                           "background-position: center;")
         else:
-            image_url = "background-image: url(:/images/Images/Avatar.png);"
+            self.image_label.setStyleSheet("border-radius:50px;\n"
+                                           "background-color: rgb(211, 211, 211);\n"
+                                           "background-image: url(:/images/Images/Avatar.png);"
+                                           "background-repeat: no-repeat; "
+                                           "background-position: center;")
 
-        # ------------
-        self.image_label.setStyleSheet("border-radius:50px;\n"
-                                       "\n"
-                                       "background-color: rgb(10, 10, 10);\n"
-                                       "\n"
-                                       f"{image_url}"
-                                       "background-repeat: no-repeat; "
-                                       "background-position: center;"
-                                       )
+        # -----------
         self.image_label.setText("")
         self.image_label.setAutoRaise(False)
         self.image_label.setArrowType(QtCore.Qt.NoArrow)
@@ -3446,17 +3044,24 @@ class Ui_Form(object):
 
         self.retranslateUi(Form)
         self.tabWidget.setCurrentIndex(0)
-        self.toolBox.setCurrentIndex(1)
-        self.stackedWidget.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(Form)
         # ----------------------------------------
-        threading.Thread(target=lambda: Thread.every(10, self.update)).start()
+        self.tables_init()
+        threading.Thread(target=lambda: Thread.every(30, self.update)).start()
+        self.opentrade_init()
         self.table()
         self.currency_combo_init()
-        self.opentrade_init()
         self.compare_calc()
+        self.note_init()
+        self.note_first_init()
+        self.combo_box_graph_init()
 
         # =========================================
+
+    def tables_init(self):
+        Table(f"Prevalues_{identity}").create()
+        Table(f'Journal_{identity}').create()
+        Table(f"Notes_{identity}").create()
 
     def currency_combo_init(self):
         _translate = QtCore.QCoreApplication.translate
@@ -3469,31 +3074,19 @@ class Ui_Form(object):
                 currency_price = value["currency_Price"]
                 currency_ = value["currency"]
                 time_pass = value["time"]
-                pass_ = True if time_pass != now.day else False
-                a = 0
-                b = 1
-                cc = 2
-                d = 3
-                if currency_ == "SGD":
-                    a = 0
-                    b = 1
-                    cc = 2
-                    d = 3
-                if currency_ == "CAD":
-                    a = 1
-                    b = 0
-                    cc = 2
-                    d = 3
-                if currency_ == "EUR":
-                    a = 1
-                    b = 2
-                    cc = 0
-                    d = 3
-                if currency_ == "MAD":
-                    a = 3
-                    b = 1
-                    cc = 2
-                    d = 0
+                pass_ = True if time_pass != now.day + 1 else False
+
+                if currency_ == "SGD" or currency_ == "CAD":
+                    a = 0 if currency_ == "SGD" else 1
+                    b = 1 if currency_ == "SGD" else 0
+                    cc = 2 if currency_ == "SGD" else 2
+                    d = 3 if currency_ == "SGD" else 3
+                else:
+                    a = 1 if currency_ == "EUR" else 3
+                    b = 2 if currency_ == "EUR" else 1
+                    cc = 0 if currency_ == "EUR" else 2
+                    d = 3 if currency_ == "EUR" else 0
+
                 self.comboBox_currency.setItemText(a, _translate("Form", "SGD"))
                 self.comboBox_currency.setItemText(b, _translate("Form", "CAD"))
                 self.comboBox_currency.setItemText(cc, _translate("Form", "EUR"))
@@ -3509,7 +3102,7 @@ class Ui_Form(object):
                 currency_price
 
             if _btc_ is not None:
-                Table(f"Prevalues_{identity}").create()
+
                 if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
                     input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
 
@@ -3544,8 +3137,8 @@ class Ui_Form(object):
                     else:
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
 
-        except Exception as e:
-            print("currency_combo_init ", e)
+        except Exception:
+            pass
 
     def currency_combo(self):
         _translate = QtCore.QCoreApplication.translate
@@ -3555,14 +3148,12 @@ class Ui_Form(object):
             currency_price = API.currency_exchange(self.comboBox_currency.currentText())
 
             if _btc_ is not None:
-                Table(f"Prevalues_{identity}").create()
+
                 if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
                     input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
 
                     input_wallet = input_wallet[1]
-
                     xusd = round(((float(input_wallet) * 0.00000001) * _btc_), 1)
-
                     xcurrency = round(float(currency_price) * xusd, 1)
                     currency = str(f"{int(xcurrency):,d}") + "." + \
                                str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
@@ -3578,60 +3169,61 @@ class Ui_Form(object):
                         Pre_values(f"Prevalues_{identity}", "currency_api", str(data)).update()
 
                 self.table()
-                self.compare_calc()
             else:
                 pass
-        except Exception as e:
-            print("currency_combo ", e)
+        except Exception:
+            pass
 
     def pre_profile(self):
+        global identity
         files = []
-        # r=root, d=directories, f = files
-        for r, d, f in os.walk("Images"):
-            for file in f:
-                if 'user_image' in file:
-                    files.append(os.path.join(r, file))
-        return files[0] if len(files) != 0 else []
+        try:
+
+            # r=root, d=directories, f = files
+            for r, d, f in os.walk("Images"):
+                for file in f:
+                    if f'{identity}' in file:
+                        files.append(os.path.join(r, file))
+            return files[0] if len(files) != 0 else []
+        except Exception:
+            pass
 
     def profile(self):
         global identity
         try:
-            file_path = QFileDialog.getOpenFileName(None, 'Select Your Backup image:', expanduser("~"))[0]
-            print(file_path)
+            file_path = QFileDialog.getOpenFileName(None, 'Select Your Profile image:', expanduser("~"))[0]
             base_width = 100
             img = Image.open(file_path)
             w_percent = (base_width / float(img.size[0]))
             h_size = int((float(img.size[1]) * float(w_percent)))
             re_image = img.resize((base_width, h_size), Image.ANTIALIAS)
             image_format = img.format
-            re_image.save(f'Images/user_image.{image_format}')
+            re_image.save(f'Images/{identity}.{image_format}')
 
             self.image_label.setStyleSheet("border-radius:50px;\n"
-                                           "\n"
-                                           "background-color: rgb(150, 150, 150);\n"
-                                           f"background-image: url(Images/user_image.{image_format});\n"
+                                           "background-color: rgb(10, 10, 10);\n"
+                                           f"background-image: url(Images/{identity}.{image_format});\n"
                                            "background-repeat: no-repeat; "
                                            "background-position: center;"
                                            "")
-        except AttributeError as e:
-            print("profile ", e)
-        except Exception as e:
-            print("profile ", e)
+        except AttributeError:
+            pass
+        except Exception:
+            pass
 
     def table(self):
         btc_ = old_btc_price
-        if btc_ is not None:
-            pass
-        else:
+        if btc_ is None:
             btc_ = 0
+        else:
+            pass
         try:
-            if not Table(f"Journal_{identity}").check:  # f'Journal_{identity}'
+            if not Table(f"Journal_{identity}").check:
                 journal_data = []
-                pass
             else:
                 journal_data = Extract(f"Journal_{identity}").fetchall()
 
-            # ===========================================
+            # --------------------------------------------
             _translate = QtCore.QCoreApplication.translate
             self.TABLE_Widget.setSortingEnabled(True)
             item = self.TABLE_Widget.horizontalHeaderItem(0)
@@ -3650,29 +3242,21 @@ class Ui_Form(object):
             self.TABLE_Widget.setSortingEnabled(False)
             self.TABLE_Widget.setRowCount(len(journal_data))
 
-            # =======================================
+            # --------------------------------------------
             if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
                 value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
                 currency_price = value["currency_Price"]
                 currency_s = value["currency"]
             else:
                 try:
-                    currency_price = API.currency_exchange("SGD")
-                    currency_s = "SGD"
+                    currency_price = API.currency_exchange(self.comboBox_currency.currentText())
+                    currency_s = self.comboBox_currency.currentText()
                 except Exception:
                     currency_price = 0
-                    currency_s = 0
-                    msg = QMessageBox()
-                    msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
-                    msg.setIcon(QMessageBox.Warning)
-                    msg.setText("conix Error")
-                    msg.setInformativeText('Something wrong restart your program and try again.')
-                    msg.setWindowTitle("wifi-Error")
-                    msg.exec_()
+                    currency_s = self.comboBox_currency.currentText()
             k = 0
             for i in range(len(journal_data)):
-                result = float(journal_data[(len(journal_data) - 1) - k][7])
-
+                result = float(journal_data[(len(journal_data) - 1) - k][6])
                 item = QtWidgets.QTableWidgetItem()
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
                 self.TABLE_Widget.setItem(i, 0, item)
@@ -3696,26 +3280,25 @@ class Ui_Form(object):
                 self.TABLE_Widget.setItem(i, 5, item)
                 # ===========================
                 item = self.TABLE_Widget.item(i, 0)
-                item.setText(_translate("MyAPP", f"{journal_data[(len(journal_data) - 1) - k][0]}"))
+                item.setText(_translate("Form", f"{journal_data[(len(journal_data) - 1) - k][0]}"))
                 item = self.TABLE_Widget.item(i, 1)
-                item.setText(_translate("MyAPP", f"{journal_data[(len(journal_data) - 1) - k][3]}"))
+                item.setText(_translate("Form", f"{journal_data[(len(journal_data) - 1) - k][2]}"))
                 item = self.TABLE_Widget.item(i, 2)
-                item.setText(_translate("MyAPP",
-                                        f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][4])} $"))
+                item.setText(_translate("Form",
+                                        f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][3])} $"))
                 item = self.TABLE_Widget.item(i, 3)
-                item.setText(_translate("MyAPP",
-                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"))
+                item.setText(_translate("Form",
+                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][4])} $"))
                 item = self.TABLE_Widget.item(i, 4)
-                item.setText(_translate("MyAPP",
-                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][6])} $"))
+                item.setText(_translate("Form",
+                                        f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"))
                 item = self.TABLE_Widget.item(i, 5)
                 xusd = round(result * btc_, 1)
                 usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
                 curr = round(float(currency_price) * xusd, 1)
-                currency = str(f"{int(curr):,d}") + "." + \
-                           str(round(abs(curr - int(curr)), 1)).split(".")[1]
+                currency = str(f"{int(curr):,d}") + "." + str(round(abs(curr - int(curr)), 1)).split(".")[1]
                 item.setText(
-                    _translate("MyAPP",
+                    _translate("Form",
                                f"{self.small_value(round(result, 5))}₿ ➨ "
                                f"{self.zero_remover(usd)} $ "
                                f"| {self.zero_remover(currency)}"
@@ -3729,56 +3312,56 @@ class Ui_Form(object):
                 item.setForeground(brush)
                 k += 1
             self.TABLE_Widget.setSortingEnabled(__sortingEnabled)
-            #self.TABLE_Widget.sortItems(1, QtCore.Qt.DescendingOrder)
-        except Exception as e:
-            print("table", e)
-            pass
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\MainWinTite.png'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("connection Error")
+            msg.setInformativeText('\nNo connection, restart your program and try again.\n\n')
+            msg.setWindowTitle("connection-Error")
+            msg.exec_()
 
     def open_trade_combo(self):
-        _translate = QtCore.QCoreApplication.translate
-        if self.checkBox_opentrade.isChecked():
-            self.input_exit_BS.setReadOnly(True)
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setStyleSheet("*{\n"
-                                             "font: 75 12pt \"Bahnschrift\";\n"
-                                             "color: rgb(0, 0, 0);\n"
-                                             "}\n"
-                                             "QLineEdit{\n"
-                                             "border-radius:8px;\n"
-                                             "background: rgb(100, 100, 100);\n"
-                                             "}")
+        try:
+            _translate = QtCore.QCoreApplication.translate
+            if self.checkBox_opentrade.isChecked():
+                self.input_exit_BS.setReadOnly(True)
+                self.input_exit_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setStyleSheet("*{\n"
+                                                 "font: 75 12pt \"Bahnschrift\";\n"
+                                                 "color: rgb(0, 0, 0);\n}"
+                                                 "QLineEdit{\n"
+                                                 "border-radius:8px;\n"
+                                                 "background: rgb(100, 100, 100);\n}")
 
-            frame_state = "background-image: url(Images/open-sign-black.png);"
-            self.Trade_state_frame.setStyleSheet(f"{frame_state}"
-                                                 "background-color: transparent;")
+                self.Trade_state_frame.setStyleSheet(f"background-image: url(Images/open-sign-black.png);\n"
+                                                     "background-color: transparent;")
 
-            color = "background: rgb(100, 100, 100);"
+                color = "background: rgb(100, 100, 100);"
+                self.frame_12.setStyleSheet(color)
+                self.frame_13.setStyleSheet(color)
+                self.frame_14.setStyleSheet(color)
+            else:
+                self.input_exit_BS.setReadOnly(False)
+                self.input_exit_BS.setText(_translate("Form", ""))
+                self.input_exit_BS.setStyleSheet("*{\n"
+                                                 "font: 75 12pt \"Bahnschrift\";\n"
+                                                 "color: rgb(0, 0, 0);\n}\n"
+                                                 "QLineEdit{\n"
+                                                 "border-radius:8px;\n"
+                                                 "background: rgb(240, 240, 240);\n"
+                                                 "}")
+                self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                     "background-color: transparent;")
 
-            self.frame_12.setStyleSheet(color)
-            self.frame_13.setStyleSheet(color)
-            self.frame_14.setStyleSheet(color)
+                color = "background: rgb(0, 0, 0);"
+                self.frame_12.setStyleSheet(color)
+                self.frame_13.setStyleSheet(color)
+                self.frame_14.setStyleSheet(color)
+        except Exception:
+            pass
 
-        else:
-            self.input_exit_BS.setReadOnly(False)
-            self.input_exit_BS.setText(_translate("MyAPP", ""))
-            self.input_exit_BS.setStyleSheet("*{\n"
-                                             "font: 75 12pt \"Bahnschrift\";\n"
-                                             "color: rgb(0, 0, 0);\n"
-                                             "}\n"
-                                             "QLineEdit{\n"
-                                             "border-radius:8px;\n"
-                                             "background: rgb(240, 240, 240);\n"
-                                             "}")
-            self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
-                                                 "background-color: transparent;")
-
-            color = "background: rgb(0, 0, 0);"
-
-            self.frame_12.setStyleSheet(color)
-            self.frame_13.setStyleSheet(color)
-            self.frame_14.setStyleSheet(color)
-
-    def calc_openTradeBUY(self):  # open the trade buy calculator
+    def calc_openTradeBUY(self):
         _translate = QtCore.QCoreApplication.translate
         if self.checkBox_opentrade.isChecked():
             try:
@@ -3793,14 +3376,11 @@ class Ui_Form(object):
                 date = f"{month}-{day}-{year}"
 
                 open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
-
                 state_ = open_data["state"]
 
                 if state_ == "closed":
 
-                    data = {"date": date, "amount": amount,
-                            "entry": entry, "state": "BUY"}
-
+                    data = {"date": date, "amount": amount, "entry": entry, "state": "BUY"}
                     Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
                     data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
                     Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
@@ -3813,10 +3393,7 @@ class Ui_Form(object):
                     x_amount = amount_ + amount
                     x_entry = ((amount_ * entry_) + (amount * entry)) / x_amount
 
-                    data = {"date": date_str_, "amount": x_amount,
-
-                            "entry": round(x_entry, 1), "state": "BUY"}
-
+                    data = {"date": date_str_, "amount": x_amount, "entry": round(x_entry, 1), "state": "BUY"}
                     Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
 
                 elif state_ == "SELL":
@@ -3828,14 +3405,9 @@ class Ui_Form(object):
 
                     if x_amount > 0:
 
-                        data = {"date": date_str_, "amount": x_amount,
-
-                                "entry": entry_, "state": "SELL"}
-
+                        data = {"date": date_str_, "amount": x_amount, "entry": entry_, "state": "SELL"}
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_sell()
@@ -3844,14 +3416,9 @@ class Ui_Form(object):
 
                     elif x_amount < 0:
 
-                        data = {"date": date, "amount": abs(x_amount),
-
-                                "entry": entry, "state": "BUY"}
-
+                        data = {"date": date, "amount": abs(x_amount), "entry": entry, "state": "BUY"}
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": date_str_, "amount": amount_, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_sell()
@@ -3861,7 +3428,6 @@ class Ui_Form(object):
                     elif x_amount == 0:
 
                         data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_sell()
@@ -3872,82 +3438,19 @@ class Ui_Form(object):
                         self.input_exit_BS.setReadOnly(False)
 
                         data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
-
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
-                state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])["state"]
+                self.open_css()
+                self.input_amount_BS_3.setText(_translate("Form", ""))
+                self.input_entry_BS.setText(_translate("Form", ""))
 
-                if state != "closed":
+            except ValueError:
+                pass
+            except Exception:
+                pass
 
-                    open_data_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
-
-                    amount = open_data_["amount"]
-                    entry = open_data_["entry"]
-                    date = open_data_["date"]
-
-                    color = "background: rgb(191, 0, 0);" if state == "SELL" else \
-                        "background: rgb(0, 132, 0);"
-
-                    self.trade_date.setText(_translate("Form", f"{date}"))
-                    self.frame_12.setStyleSheet(color)
-                    self.trade_amount.setText(_translate("Form", f"{amount}$"))
-                    self.frame_13.setStyleSheet(color)
-                    self.trade_entry.setText(_translate("Form", f"{entry}$"))
-                    self.frame_14.setStyleSheet(color)
-
-                    frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
-                        state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
-
-                    self.Trade_state_frame.setStyleSheet(f"{frame_state}"
-                                                         "background-color: transparent;")
-
-                    self.down_bar_label.setText(_translate("Form",
-                                                           f"Data Storage Size : {file_size('database.db')}           "
-                                                           f"     "
-                                                           f"                  Trade open since : {date}              "
-                                                           f"     "
-                                                           f"                        "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           f"              {current_time()} "))
-
-                else:
-                    color = "background: rgb(0, 0, 0);"
-
-                    self.trade_date.setText(_translate("Form", ""))
-                    self.frame_12.setStyleSheet(color)
-                    self.trade_amount.setText(_translate("Form", ""))
-                    self.frame_13.setStyleSheet(color)
-                    self.trade_entry.setText(_translate("Form", ""))
-                    self.frame_14.setStyleSheet(color)
-                    self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
-                                                         "background-color: transparent;")
-
-                    self.down_bar_label.setText(_translate("Form",
-                                                           f"Data Storage Size : {file_size('database.db')}      "
-                                                           f"          "
-                                                           f"                  Trade closed :                      "
-                                                           f"        "
-                                                           f"                        "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           f"                   {current_time()} "))
-
-                self.input_amount_BS_3.setText(_translate("MyAPP", ""))
-                self.input_entry_BS.setText(_translate("MyAPP", ""))
-
-            except Exception as e:
-                print("open buy ", e)
         else:
             self.journal_buy()
             self.table()
@@ -3968,14 +3471,11 @@ class Ui_Form(object):
                 date = f"{month}-{day}-{year}"
 
                 open_data = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
-
                 state_ = open_data["state"]
 
                 if state_ == "closed":
 
-                    data = {"date": date, "amount": amount,
-                            "entry": entry, "state": "SELL"}
-
+                    data = {"date": date, "amount": amount, "entry": entry, "state": "SELL"}
                     Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
                     data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
                     Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
@@ -3988,10 +3488,7 @@ class Ui_Form(object):
                     x_amount = amount_ + amount
                     x_entry = ((amount_ * entry_) + (amount * entry)) / x_amount
 
-                    data = {"date": date_str_, "amount": x_amount,
-
-                            "entry": round(x_entry, 1), "state": "SELL"}
-
+                    data = {"date": date_str_, "amount": x_amount, "entry": round(x_entry, 1), "state": "SELL"}
                     Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
 
                 elif state_ == "BUY":
@@ -4003,14 +3500,9 @@ class Ui_Form(object):
 
                     if x_amount > 0:
 
-                        data = {"date": date_str_, "amount": x_amount,
-
-                                "entry": entry_, "state": "BUY"}
-
+                        data = {"date": date_str_, "amount": x_amount, "entry": entry_, "state": "BUY"}
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_buy()
@@ -4019,14 +3511,9 @@ class Ui_Form(object):
 
                     elif x_amount < 0:
 
-                        data = {"date": date, "amount": abs(x_amount),
-
-                                "entry": entry, "state": "SELL"}
-
+                        data = {"date": date, "amount": abs(x_amount), "entry": entry, "state": "SELL"}
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": date_str_, "amount": amount_, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_buy()
@@ -4036,7 +3523,6 @@ class Ui_Form(object):
                     elif x_amount == 0:
 
                         data_ = {"date": date_str_, "amount": amount, "entry": entry_, "exit": entry}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
                         self.journal_buy()
@@ -4047,85 +3533,77 @@ class Ui_Form(object):
                         self.input_exit_BS.setReadOnly(False)
 
                         data = {"date": 0, "amount": 0, "entry": 0, "state": "closed"}
-
                         Pre_values(f"Prevalues_{identity}", "opentrade", str(data)).update()
-
                         data_ = {"date": 0, "amount": 0, "entry": 0, "exit": 0}
-
                         Pre_values(f"Prevalues_{identity}", "opentradeplus", str(data_)).update()
 
-                state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])["state"]
+                self.open_css()
+                self.input_amount_BS_3.setText(_translate("Form", ""))
+                self.input_entry_BS.setText(_translate("Form", ""))
 
-                if state != "closed":
+            except ValueError:
 
-                    open_data_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+                pass
+            except Exception:
+                pass
 
-                    amount = open_data_["amount"]
-                    entry = open_data_["entry"]
-                    date = open_data_["date"]
-
-                    color = "background: rgb(191, 0, 0);" if state == "SELL" else \
-                        "background: rgb(0, 132, 0);"
-
-                    self.trade_date.setText(_translate("Form", f"{date}"))
-                    self.frame_12.setStyleSheet(color)
-                    self.trade_amount.setText(_translate("Form", f"{amount}$"))
-                    self.frame_13.setStyleSheet(color)
-                    self.trade_entry.setText(_translate("Form", f"{entry}$"))
-                    self.frame_14.setStyleSheet(color)
-                    frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
-                        state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
-
-                    self.Trade_state_frame.setStyleSheet(f"{frame_state}"
-                                                         "background-color: transparent;")
-
-                    self.down_bar_label.setText(_translate("Form",
-                                                           f"Data Storage Size : {file_size('database.db')}         "
-                                                           f"       "
-                                                           f"                  Trade open since : {date}             "
-                                                           f"      "
-                                                           f"                        "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           f"              {current_time()} "))
-
-                else:
-                    color = "background: rgb(0, 0, 0);"
-
-                    self.trade_date.setText(_translate("Form", ""))
-                    self.frame_12.setStyleSheet(color)
-                    self.trade_amount.setText(_translate("Form", ""))
-                    self.frame_13.setStyleSheet(color)
-                    self.trade_entry.setText(_translate("Form", ""))
-                    self.frame_14.setStyleSheet(color)
-                    self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
-                                                         "background-color: transparent;")
-
-                    self.down_bar_label.setText(_translate("Form",
-                                                           f"Data Storage Size : {file_size('database.db')}      "
-                                                           f"          "
-                                                           f"                  Trade closed :                     "
-                                                           f"         "
-                                                           f"                        "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           "                         "
-                                                           "                                                    "
-                                                           f"                   {current_time()} "))
-
-                self.input_amount_BS_3.setText(_translate("MyAPP", ""))
-                self.input_entry_BS.setText(_translate("MyAPP", ""))
-
-            except Exception as e:
-                print("open sell ", e)
         else:
             self.journal_sell()
             self.table()
             self.compare_calc()
+
+    def open_css(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            state = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])["state"]
+
+            if state != "closed":
+                open_data_ = eval(Extract(f"Prevalues_{identity}").get_by_id("opentrade")[1])
+                amount = open_data_["amount"]
+                entry = open_data_["entry"]
+                date = open_data_["date"]
+
+                color = "background: rgb(191, 0, 0);" if state == "SELL" else "background: rgb(0, 132, 0);"
+                self.trade_date.setText(_translate("Form", f"{date}"))
+                self.frame_12.setStyleSheet(color)
+                self.trade_amount.setText(_translate("Form", f"{amount}$"))
+                self.frame_13.setStyleSheet(color)
+                self.trade_entry.setText(_translate("Form", f"{entry}$"))
+                self.frame_14.setStyleSheet(color)
+                frame_state = "background-image: url(:/images/Images/open_sign_sell.png);" if \
+                    state == "SELL" else "background-image: url(:/images/Images/open_sign_buy.png);\n"
+
+                self.Trade_state_frame.setStyleSheet(f"{frame_state}\n""background-color: transparent;")
+                self.bottom_trade_label.setText(_translate("Form", f"Trade open since : {date}"))
+            else:
+                color = "background: rgb(0, 0, 0);"
+                self.trade_date.setText(_translate("Form", ""))
+                self.frame_12.setStyleSheet(color)
+                self.trade_amount.setText(_translate("Form", ""))
+                self.frame_13.setStyleSheet(color)
+                self.trade_entry.setText(_translate("Form", ""))
+                self.frame_14.setStyleSheet(color)
+                self.Trade_state_frame.setStyleSheet("background-image: url(:/images/Images/close_sign.png);\n"
+                                                     "background-color: transparent;")
+                self.bottom_trade_label.setText(_translate("Form", "Trade closed :"))
+        except Exception:
+            pass
+
+    def mod_event(self):
+        _translate = QtCore.QCoreApplication.translate
+        id_ = self.input_modify.text()
+        try:
+            if len(id_.split("/")) == 2:
+                data = Extract(f"Journal_{identity}").get_by_id(id_.split("/")[0])
+                _id_ = data[0]
+                amount = data[3].split(" ")[1]
+                entry = data[4]
+                exit_ = data[5]
+                self.input_modify.setText(_translate("Form", f"{_id_}/{amount}/{entry}/{exit_}"))
+        except TypeError:
+            pass
+        except Exception:
+            pass
 
     def delete(self):
         _translate = QtCore.QCoreApplication.translate
@@ -4135,22 +3613,25 @@ class Ui_Form(object):
                 value_ = int(id_)
                 Extract(f"Journal_{identity}").delete(where="id", cell=value_)
                 id_list_ = Extract(f"Journal_{identity}").select_column("id")
-                counter_ = 1
-                for i in id_list_:
-                    Journal(name=f"Journal_{identity}", id_=i, month=0, year=0, date=0, amount=0, entry=0, exit_=0,
-                            result=0).update_one(counter_)
-                    counter_ += 1
-
+                if value_ != id_list_[len(id_list_) - 1] + 1:
+                    counter_ = 1
+                    for i in id_list_:
+                        Journal(name=f"Journal_{identity}", id_=i, month_year=0, date=0, amount=0, entry=0, exit_=0,
+                                result=0).update_one(counter_)
+                        counter_ += 1
+                else:
+                    pass
                 self.table()
                 self.compare_calc()
+                self.input_delete.setText(_translate("Form", ""))
             else:
                 pass
         except Exception:
             msg = QMessageBox()
             msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
             msg.setIcon(QMessageBox.Information)
-            msg.setText("Error")
-            msg.setInformativeText(f'The ID {id_} cannot be found.')
+            msg.setText("ID Error")
+            msg.setInformativeText(f'\nThe ID ({id_}) cannot be found.\n\n')
             msg.setWindowTitle("ID Error")
             msg.exec_()
             self.input_delete.setText(_translate("MyAPP", ""))
@@ -4168,62 +3649,58 @@ class Ui_Form(object):
             id_ = old_data[0]
 
             result = ((float(entry) - float(exit_)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
-
             _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
 
-            Table(f'Journal_{identity}').create()
-
-            Journal(name=f"Journal_{identity}", id_=str(id_), month=str(month), year=str(year),
+            month_year = f"{month}/{year}"
+            Journal(name=f"Journal_{identity}", id_=str(id_), month_year=month_year,
                     date=str(date), amount="▼ " + str(amount), entry=str(entry), exit_=str(exit_),
                     result=_result).update()
 
             self.table()
             self.compare_calc()
+            self.input_modify.setText(_translate("Form", ""))
 
         except Exception:
             msg = QMessageBox()
             msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
             msg.setIcon(QMessageBox.Warning)
             msg.setText("Input Error")
-            msg.setInformativeText("Please enter the correct format\nID/Amount/Entry/Exit\n"
-                                   "with the forward slash.")
+            msg.setInformativeText("\nPlease enter the correct format,\nID/Amount/Entry/Exit\n"
+                                   "with forward slash.\n\n")
             msg.setWindowTitle("input-Error")
             msg.exec_()
 
     def modify_buy(self):
         _translate = QtCore.QCoreApplication.translate
         data = self.input_modify.text()
-
         try:
             id_, amount, entry, exit_ = data.split("/")
             id_ = int(id_)
             old_data = Extract(f"Journal_{identity}").get_by_id(id_)
-            print(old_data)
             date = old_data[3]
             month = old_data[1]
             year = old_data[2]
             id_ = old_data[0]
 
             result = ((float(exit_) - float(entry)) / float(entry)) * (float(amount) * (1 / float(old_btc_price)))
-
             _result = "+" + str(round(result, 5)) if result > 0 else str(round(result, 5))
 
-            Table(f'Journal_{identity}').create()
-
-            Journal(name=f"Journal_{identity}", id_=str(id_), month=str(month), year=str(year),
+            month_year = f"{month}/{year}"
+            Journal(name=f"Journal_{identity}", id_=str(id_), month_year=month_year,
                     date=str(date), amount="▲ " + str(amount), entry=str(entry), exit_=str(exit_),
                     result=_result).update()
 
             self.table()
             self.compare_calc()
+            self.input_modify.setText(_translate("Form", ""))
 
         except Exception:
             msg = QMessageBox()
             msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
             msg.setIcon(QMessageBox.Warning)
             msg.setText("Input Error")
-            msg.setInformativeText("Please enter the correct format\nID/Amount/Entry/Exit\n"
-                                   "with the forward slash.")
+            msg.setInformativeText("\nPlease enter the correct format,\nID/Amount/Entry/Exit\n"
+                                   "with forward slash.\n\n")
             msg.setWindowTitle("input-Error")
             msg.exec_()
 
@@ -4231,9 +3708,10 @@ class Ui_Form(object):
         _translate = QtCore.QCoreApplication.translate
         try:
             data = Extract(f"Journal_{identity}").select_column("result")
-            negative = [x for x in data if x < 0]
-            positive = [x for x in data if x >= 0]
-            print(self.small_value(round(max(negative), 5)))
+            negative_ = [x for x in data if x < 0]
+            negative = negative_ if len(negative_) >= 1 else [0]
+            positive_ = [x for x in data if x >= 0]
+            positive = positive_ if len(positive_) >= 1 else [0]
 
             self.max_gain_1_label.setText(_translate("Form", f"+{self.small_value(round(max(positive), 5))}₿"))
             self.min_gain_1_label.setText(_translate("Form", f"+{self.small_value(round(min(positive), 5))}₿"))
@@ -4241,44 +3719,601 @@ class Ui_Form(object):
             self.min_loss_1_label.setText(_translate("Form", f"{self.small_value(round(max(negative), 5))}₿"))
             # =====
             ppp = sum(data)
-            print(ppp)
             if ppp >= 0:
                 self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                                              "color: rgb(0, 132, 0);\n"
                                                              "background: transparent;")
-                self.profile_pure_profit_label.setText(_translate("Form",
-                                                                  f"+{round(ppp, 5)}₿"))
+                self.profile_pure_profit_label.setText(_translate("Form", f"+{round(ppp, 5)}₿"))
             else:
                 self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
                                                              "color: rgb(191, 0, 0);\n"
                                                              "background: transparent;")
-                self.profile_pure_profit_label.setText(_translate("Form",
-                                                                  f"{round(ppp, 5)}₿"))
+                self.profile_pure_profit_label.setText(_translate("Form", f"{round(ppp, 5)}₿"))
 
             self.profile_total_wins_label.setText(_translate("Form", f"+{round(sum(positive), 5)}₿"))
             self.profile_total_losses_label.setText(_translate("Form", f"{round(sum(negative), 5)}₿"))
 
             # =========
-            p = len(positive)
-            n = len(negative)
+            p = len(positive) - 1 if 0 in positive else len(positive)
+            n = len(negative) - 1 if 0 in negative else len(negative)
+
             if p > n:
-                percentage = "+"+str(int((p / (n + p)) * 100))
+                percentage = "+" + str(round((p / (n + p)) * 100))
                 color = "color: rgb(0, 153, 0);"
             elif n > p:
-                percentage = int((n / (n + p)) * -100)
+                percentage = round((n / (n + p)) * -100)
                 color = "color: rgb(200, 0, 0);"
             else:
                 percentage = 0
                 color = "color: rgb(0, 153, 0);"
-            self.rate_label.setText(_translate("Form", f"{percentage}%"))
 
-            self.rate_label.setStyleSheet(f"{color}\n"
-                                          "font: 63 14pt \"Segoe UI Semibold\";")
+            self.rate_label.setText(_translate("Form", f"{percentage}%"))
+            self.rate_label.setStyleSheet(f"{color}\n""font: 63 14pt \"Segoe UI Semibold\";")
             self.win_label.setText(_translate("Form", f"{p}"))
             self.losses_label.setText(_translate("Form", f"{n}"))
 
         except Exception as e:
-            print("ww", e)
+            self.max_gain_1_label.setText(_translate("Form", "0₿"))
+            self.min_gain_1_label.setText(_translate("Form", "0₿"))
+            self.max_loss_1_label.setText(_translate("Form", "0₿"))
+            self.min_loss_1_label.setText(_translate("Form", "0₿"))
+            self.rate_label.setText(_translate("Form", "0%"))
+            self.rate_label.setStyleSheet(f"color: rgb(211, 211, 211);\n""font: 63 14pt \"Segoe UI Semibold\";")
+            self.win_label.setText(_translate("Form", "0"))
+            self.losses_label.setText(_translate("Form", "0"))
+            self.profile_total_wins_label.setText(_translate("Form", "0₿"))
+            self.profile_total_losses_label.setText(_translate("Form", "0₿"))
+            self.profile_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                         "color: rgb(211, 211, 211);\n"
+                                                         "background: transparent;")
+            self.profile_pure_profit_label.setText(_translate("Form", "0₿"))
+
+    def download_thread(self):
+        try:
+            text = self.comboBox_backup.currentText()
+            input_dir = QFileDialog.getExistingDirectory(None, 'Download in', expanduser("~"))
+            self.progressBar_download.setProperty("value", 20)
+            threading.Thread(target=self.download, args=(input_dir, text)).start()
+            self.progressBar_download.setProperty("value", 100)
+        except Exception:
+            pass
+
+    def download(self, input_dir, text):
+        global username
+        # HTML, TXT, Backup
+        try:
+            if not Table(f"Journal_{identity}").check:
+                journal_data = []
+            else:
+                journal_data = Extract(f"Journal_{identity}").fetchall()
+
+            count = len(journal_data)
+
+            if text == "HTML":
+                with open(os.path.join(f"{input_dir}", "Hunter_Historical _Data.html"), "a", encoding="utf-8") as f:
+                    f.write(html_0 + "\n")
+                    # ==============
+                    data = Extract(f"Journal_{identity}").select_column("result")
+                    negative_ = [x for x in data if x < 0]
+                    negative = negative_ if len(negative_) >= 1 else [0]
+                    positive_ = [x for x in data if x >= 0]
+                    positive = positive_ if len(positive_) >= 1 else [0]
+                    ppp = sum(data)
+                    if ppp >= 0:
+                        color = "rgb(0, 132, 0)"
+
+                    else:
+                        color = "rgb(191, 0, 0)"
+
+                    f.write(html_1(username=username, Pure_Profit=round(ppp, 5),
+                                   Total_Wins=round(sum(positive), 5),
+                                   Total_Losses=round(sum(negative), 5),
+                                   MAX_Gain=self.small_value(round(max(positive), 5)),
+                                   MIN_Gain=self.small_value(round(min(positive), 5)),
+                                   MAX_Loss=self.small_value(round(min(negative), 5)),
+                                   MIN_Loss=self.small_value(round(max(negative), 5)),
+                                   color=color))
+                    k = 0
+                    for i in range(count):
+                        # self.progressBar_download.setProperty("value", (100 / count * k))
+                        result = float(journal_data[(len(journal_data) - 1) - k][6])
+                        date = journal_data[(len(journal_data) - 1) - k][2]
+                        amount = f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][3])} $"
+                        entry = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][4])} $"
+                        exit_ = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"
+                        result_ = f"{self.small_value(round(result, 5))}₿"
+                        if result >= 0:
+                            color = "rgb(3, 100, 64)"
+                        else:
+                            color = "rgb(139, 0, 0)"
+                        k += 1
+                        f.write(html_2(Date=date, Amount=amount, Entry=entry, Exit=exit_, Result=result_, color=color))
+
+                    f.write(html_3)
+
+            elif text == "TXT":
+                with open(os.path.join(f"{input_dir}", "Hunter_Historical _Data.txt"), "a", encoding="utf-8") as f:
+                    f.write("   Date   ,  Amount  ,  Entry  ,  Exit  ,  Amount   " + "\n")
+                    k = 0
+                    for i in range(count):
+                        # self.progressBar_download.setProperty("value", (100 / count * k))
+                        result = float(journal_data[(len(journal_data) - 1) - k][6])
+                        date = journal_data[(len(journal_data) - 1) - k][2]
+                        amount = f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][3])} $"
+                        entry = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][4])} $"
+                        exit_ = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])} $"
+                        result_ = f"{self.small_value(round(result, 5))}₿"
+
+                        k += 1
+                        f.write(f"{date} , {amount} , {entry} , {exit_} , {result_}  " + "\n")
+
+            elif text == "Backup":
+                with open(os.path.join(f"{input_dir}", "Hunter_Historical _Data.pickle"), "ab") as a:
+                    dict_ = dict()
+                    k = 0
+                    for i in range(count):
+                        result = float(journal_data[(len(journal_data) - 1) - k][6])
+                        date = journal_data[(len(journal_data) - 1) - k][2]
+                        amount = f"{self.zero_remover_amount(journal_data[(len(journal_data) - 1) - k][3])}"
+                        entry = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][4])}"
+                        exit_ = f"{self.zero_remover(journal_data[(len(journal_data) - 1) - k][5])}"
+                        result_ = f"{self.small_value(round(result, 5))}"
+                        k += 1
+
+                        values = {"Date": date, "Amount": amount, "Entry": entry, "Exit": exit_, "Result": result_}
+
+                        dict_.__setitem__(f"{i}", f"{values}")
+
+                    pickle.dump(dict_, a)
+
+            # self.progressBar_download.setProperty("value", 100)
+
+        except Exception:
+            pass
+
+    def order_input_off(self):
+        if self.radioButton_ordersize.isChecked():
+            self.input_ordersize.setReadOnly(True)
+        else:
+            self.input_ordersize.setReadOnly(False)
+
+        if self.radioButton_risk.isChecked():
+            self.input_risk_right.setReadOnly(True)
+        else:
+            self.input_risk_right.setReadOnly(False)
+
+        if self.radioButton_stop.isChecked():
+            self.input_stop.setReadOnly(True)
+        else:
+            self.input_stop.setReadOnly(False)
+
+    def order_calc(self):  # calculator
+        global identity
+        _translate = QtCore.QCoreApplication.translate
+
+        try:
+            if not self.radioButton_ordersize.isChecked() and \
+                    not self.radioButton_risk.isChecked() and \
+                    not self.radioButton_stop.isChecked():
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Selection Error")
+                msg.setInformativeText('\nPlease Select Your Options.\n\n')
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
+            elif not self.checkBox_2.isChecked() and \
+                    not self.checkBox.isChecked():
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Selection Error")
+                msg.setInformativeText('\nError Please Select Your Risk Options.\n\n')
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
+                # --------------------------
+            else:
+                wallet = float(Extract(f"Prevalues_{identity}").get_by_id("Wallet")[1])
+                if self.radioButton_ordersize.isChecked():
+                    entry = float(self.input_entry.text())
+                    stop = float(self.input_stop.text())
+                    X_risk = (float(self.input_risk_right.text()) / 100)
+                    if self.checkBox_2.isChecked():
+                        quantity = (X_risk * wallet * 0.00000001 * entry * stop) / (entry - stop)
+                        self.resut_output_0.setText(_translate("Form", f"The order size: {round(quantity, 2)}"))
+
+                    elif self.checkBox.isChecked():
+                        risk = (X_risk / wallet)
+                        quantity = ((risk / (wallet * 0.00000001)) * 100) * (
+                            0.00000001) * wallet * entry * stop / (entry - stop)
+                        self.resut_output_0.setText(_translate("Form", f"The order size: {round(quantity, 2)}"))
+
+                elif self.radioButton_risk.isChecked():
+                    entry = float(self.input_entry.text())
+                    stop = float(self.input_stop.text())
+                    a_quantity = float(self.input_ordersize.text())
+                    try:
+                        if self.checkBox_2.isChecked():
+                            Risk = (a_quantity * (entry - stop)) / (wallet * 0.00000001 * entry * stop) * 100
+                            risk = str(round(Risk, 2)) + ' %'
+                            self.resut_output_0.setText(_translate("Form", f"The Risk: {risk}"))
+                        elif self.checkBox.isChecked():
+                            risk = (a_quantity * (entry - stop)) / (wallet * 0.00000001 * entry * stop)
+                            risk = str(f"{int(round(risk, 2) * wallet):,d}") + ' Sat'
+                            self.resut_output_0.setText(_translate("Form", f"The Risk in Sat: {risk}"))
+                    except Exception:
+                        pass
+                elif self.radioButton_stop.isChecked():
+                    wallet = int(wallet)
+                    entry = float(self.input_entry.text())
+                    a_quantity = float(self.input_ordersize.text())
+                    x_risk = float(self.input_risk_right.text())
+                    X_risk = (x_risk / 100)
+                    if self.checkBox_2.isChecked():
+                        stop = (a_quantity * entry) / (X_risk * wallet * 0.00000001 * entry + a_quantity)
+                        self.resut_output_0.setText(_translate("Form", f"The Stop: {round(stop, 2)}"))
+                    elif self.checkBox.isChecked():
+                        risk = (x_risk / wallet)
+                        stop = (a_quantity * entry) / ((risk / (wallet * 0.00000001) * 100) * (
+                            0.00000001) * wallet * entry + a_quantity)
+                        self.resut_output_0.setText(_translate("Form", f"The Stop: {round(stop, 2)}"))
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Input Error")
+            msg.setInformativeText(
+                "\n☺ Whoops, that's an error!\nPlease enter a numeric input\nOR Your Wallet Balance.\n\n")
+            msg.setWindowTitle("input-Error")
+            msg.exec_()
+
+    def profit_calc(self):  # calculator
+        global identity
+        _translate = QtCore.QCoreApplication.translate
+        if not self.radioButton_Riskpercentage_left.isChecked() and \
+                not self.Radiobtn_Risksato_left.isChecked():
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Selection Error")
+            msg.setInformativeText('\nError Please Select Your Risk Options.\n\n')
+            msg.setWindowTitle("input-Error")
+            msg.exec_()
+        else:
+            try:
+                wallet = float(Extract(f"Prevalues_{identity}").get_by_id("Wallet")[1])
+                if self.radioButton_Riskpercentage_left.isChecked():
+                    profit = float(self.input_Calc_Profit_left.text())
+                    risk = float(self.input_Calc_Risk_left.text())
+                    result = ((wallet * (risk / 100)) * (profit / 100)) / wallet
+                    risk_ = str(round((result * 100), 2)) + ' %'
+                    sato_value = str(f"{int(round((result * wallet), 4)):,d}") + ' Sat'
+                    self.resut_output_3.setText(_translate("Form", f"{risk_}"))
+                    self.resut_output_1.setText(_translate("Form", f"{sato_value}"))
+                    add_value = int((round(result * wallet, 4)) + wallet)
+                    sato_ = f"{add_value:,d}"
+                    self.resut_output_2.setText(_translate("Form", f"{sato_} Sat"))
+                elif self.Radiobtn_Risksato_left.isChecked() is True:
+                    profit = float(self.input_Calc_Profit_left.text())
+                    risk = float(self.input_Calc_Risk_left.text())
+                    x = wallet * (((risk / wallet) * 100) / 100)
+                    result = (x * (((profit / x) * 100) / 100)) / wallet
+                    risk_ = str(round(result * 100, 2)) + ' %'
+                    self.resut_output_3.setText(_translate("Form", f"{risk_}"))
+                    sato_value = str(f"{int(round(result * wallet, 4)):,d}") + ' Sat'
+                    self.resut_output_1.setText(_translate("Form", f"{sato_value}"))
+                    # -----------
+                    add_value = int((round(result * wallet, 4)) + wallet)
+                    sato_ = f"{add_value:,d}"
+                    self.resut_output_2.setText(_translate("Form", f"{sato_} Sat"))
+            except Exception:
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("Input Error")
+                msg.setInformativeText(
+                    "\nWhoops, that's an error!\nPlease enter a numeric input\nOR Your Wallet Balance.\n\n")
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
+
+    def btc_to_sato(self):  # btc to sat converter
+        try:
+            _translate = QtCore.QCoreApplication.translate
+            btc_v = str(self.convert_input.text())
+            x_value = float(btc_v) * 100000000
+            value = f"{int(x_value):,d}"
+            self.convert_output.setText(_translate("Form", f"{value} SAT"))
+        except Exception:
+            pass
+
+    def note_first_init(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            data_note = Extract(f"Notes_{identity}").fetchall()
+            if len(data_note) != 0:
+                note = data_note[len(data_note) - 1]
+                self.note_date.setText(_translate("Form", f"{eval(note[1])[0]}     {eval(note[1])[1]}"))
+                self.note_title.setText(_translate("Form", f"   #  {note[0]}"))
+                self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(note[2])}"))
+        except Exception:
+            pass
+
+    def note_init(self):
+        try:
+            data_note = Extract(f"Notes_{identity}").fetchall()
+            _translate = QtCore.QCoreApplication.translate
+            self.listWidget_Note.setSortingEnabled(True)
+            __sortingEnabled = self.listWidget_Note.isSortingEnabled()
+            self.listWidget_Note.setSortingEnabled(False)
+            self.listWidget_Note.clear()
+            k = 0
+            for l in range(len(data_note)):
+                i = data_note[len(data_note) - l - 1]
+                item = QtWidgets.QListWidgetItem()
+                self.listWidget_Note.addItem(item)
+                item = self.listWidget_Note.item(k)
+                text = i[2] if len(i[2]) == 0 else decrypt(i[2])
+                item.setText(_translate("Form", f"{i[0].upper()}: \n{text[:53]}\n"
+                                                f"{eval(i[1])[0]}   {eval(i[1])[1]}"))
+                k += 1
+
+            self.listWidget_Note.setSortingEnabled(__sortingEnabled)
+        except Exception:
+            pass
+
+    def notes(self, selected_item):
+        try:
+            data = selected_item.text().split(":")[0].lower()
+            with open("current_note.dat", "wb") as w:
+                pickle.dump(data, w)
+            _translate = QtCore.QCoreApplication.translate
+            note = Extract(f"Notes_{identity}").get_by_column(column="title", cell=data)
+            self.note_date.setText(_translate("Form", f"{eval(note[1])[0]}     {eval(note[1])[1]}"))
+            self.note_title.setText(_translate("Form", f"   #  {data}"))
+            self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(note[2])}"))
+        except Exception:
+            pass
+
+    def del_note(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            with open("current_note.dat", "rb") as r:
+                title = pickle.load(r)
+            Extract(name=f"Notes_{identity}").delete(where="title", cell=title)
+            self.note_init()
+            with open("current_note.dat", "wb"):
+                pass
+            self.note_date.setText(_translate("Form", " "))
+            self.note_title.setText(_translate("Form", "   # "))
+            self.note_TextEdit.setPlainText(_translate("Form", " "))
+
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("select Error")
+            msg.setInformativeText(
+                "\nSelect your title to delete.\n\n")
+            msg.setWindowTitle("input-Error")
+            msg.exec_()
+
+    def save_note(self):
+        try:
+            with open("current_note.dat", "rb") as r:
+                try:
+                    title = pickle.load(r)
+                except EOFError:
+                    msg = QMessageBox()
+                    msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setText("select Error")
+                    msg.setInformativeText(
+                        "\nPlease select your Note title before saving.\n\n")
+                    msg.setWindowTitle("input-Error")
+                    msg.exec_()
+                    title = ""
+
+            text = str(self.note_TextEdit.toPlainText())
+            encrypt_ = onetimepad.encrypt(text, key)
+            Notes(name=f"Notes_{identity}", title=title, date=0, note=0).update_one(note=encrypt_)
+
+            self.note_init()
+            with open("current_note.dat", "wb"):
+                pass
+        except Exception:
+            pass
+
+    def new_title(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            title = str(self.note_input_add.text().lower())
+            with open("current_note.dat", "wb") as w:
+                pickle.dump(title, w)
+            if title != "":
+                date = datetime.date.today()
+                month = date.month
+                year = date.year
+                day = date.day
+                date_ = f"{month}-{day}-{year}"
+                date = [f"{date_}", f"{current_time()}"]
+                if not Extract(f"Notes_{identity}").check_by(column="title", cell=title):
+                    Notes(name=f"Notes_{identity}", title=title, date=str(date), note="").insert()
+
+                    self.note_date.setText(_translate("Form", f"{date_}     {current_time()}"))
+                    self.note_title.setText(_translate("Form", f"   # {title}"))
+                    self.note_TextEdit.setPlainText(_translate("Form", ""))
+                    self.note_init()
+                else:
+                    msg = QMessageBox()
+                    msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setText("select Error")
+                    msg.setInformativeText(
+                        "\nYour Note already exist.\n\n")
+                    msg.setWindowTitle("input-Error")
+                    msg.exec_()
+        except Exception:
+            pass
+
+    def search_note(self):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            data_note = Extract(f"Notes_{identity}").fetchall()
+            title_s = str(self.note_input_search.text().lower())
+            pass_ = False
+            for i in data_note:
+                if title_s == i[0]:
+                    self.note_date.setText(_translate("Form", f"{eval(i[1])[0]}    {eval(i[1])[1]}"))
+                    self.note_title.setText(_translate("Form", f"   #  {i[0]}"))
+                    self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(i[2])}"))
+                    with open("current_note.dat", "wb") as w:
+                        pickle.dump(title_s, w)
+                        pass_ = True
+                    break
+            if not pass_:
+                msg = QMessageBox()
+                msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+                msg.setIcon(QMessageBox.Warning)
+                msg.setText("search Error")
+                msg.setInformativeText(
+                    f"\n{title_s} does not exist in your Notes database.\n\n")
+                msg.setWindowTitle("input-Error")
+                msg.exec_()
+        except Exception:
+            pass
+
+    def combo_box_graph_init(self):
+
+        try:
+            _translate = QtCore.QCoreApplication.translate
+            list_ = Extract(f"Journal_{identity}").get_for_graph_combo()
+            keys = ["VIEW ALL"]
+            for i in list_:
+                if not i[1] in keys:
+                    keys.append(i[1])
+            k = 0
+            for date in keys:
+                self.comboBox2_historical_data_2.addItem("")
+                self.comboBox2_historical_data_2.setItemText(k, _translate("Form", f"{date}"))
+                k += 1
+        except Exception:
+            pass
+
+    def combo_box_graph(self):
+        try:
+            date = str(self.comboBox2_historical_data_2.currentText())
+            date = "" if date == 'VIEW ALL' else date
+            list_ = Extract(f"Journal_{identity}").get_for_graph_combo()
+            combo = {f"{date}": []}
+            for i in list_:
+                if date in i[1]:
+                    mylist = combo.__getitem__(date)
+                    mylist.append(i[0])
+                    combo.__setitem__(date, mylist)
+
+            date_list = combo.__getitem__(date)
+            result_list = []
+            date_ = []
+            for x in date_list:
+                result = Extract(f"Journal_{identity}").get_by_id(id_=x)
+                result_list.append(result[6])
+                date_.append(result[2])
+            self.compare_calc_graph(data_list=result_list)
+            canvas = MyMplCanvas(self.performance_frame, width=0, height=0, list_=list(zip(date_, result_list)),
+                                 date="All Records" if date == "" else date)
+            canvas.setGeometry(QtCore.QRect(0, 0, 1087, 529))
+        except Exception:
+            pass
+
+    def compare_calc_graph(self, data_list):
+        _translate = QtCore.QCoreApplication.translate
+        try:
+            data = data_list
+            negative_ = [x for x in data if x < 0]
+            negative = negative_ if len(negative_) >= 1 else [0]
+            positive_ = [x for x in data if x >= 0]
+            positive = positive_ if len(positive_) >= 1 else [0]
+
+            self.max_gain_performance.setText(_translate("Form", f"+{self.small_value(round(max(positive), 5))}₿"))
+            self.min_gain_performance.setText(_translate("Form", f"+{self.small_value(round(min(positive), 5))}₿"))
+            self.max_loss_performance.setText(_translate("Form", f"{self.small_value(round(min(negative), 5))}₿"))
+            self.min_loss_performance.setText(_translate("Form", f"{self.small_value(round(max(negative), 5))}₿"))
+            # =====
+            ppp = sum(data)
+            if ppp >= 0:
+                self.preformance_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                                 "color: rgb(0, 132, 0);\n"
+                                                                 "background: transparent;")
+                self.preformance_pure_profit_label.setText(_translate("Form", f"+{round(ppp, 5)}₿"))
+            else:
+                self.preformance_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                                 "color: rgb(191, 0, 0);\n"
+                                                                 "background: transparent;")
+                self.preformance_pure_profit_label.setText(_translate("Form", f"{round(ppp, 5)}₿"))
+
+            self.preformance_total_wins_label.setText(_translate("Form", f"+{round(sum(positive), 5)}₿"))
+            self.preformance_total_loss_label.setText(_translate("Form", f"{round(sum(negative), 5)}₿"))
+
+        except Exception:
+            self.max_gain_performance.setText(_translate("Form", "0₿"))
+            self.min_gain_performance.setText(_translate("Form", "0₿"))
+            self.max_loss_performance.setText(_translate("Form", "0₿"))
+            self.min_loss_performance.setText(_translate("Form", "0₿"))
+            self.preformance_total_wins_label.setText(_translate("Form", "0₿"))
+            self.preformance_total_loss_label.setText(_translate("Form", "0₿"))
+            self.preformance_pure_profit_label.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                             "color: rgb(211, 211, 211);\n"
+                                                             "background: transparent;")
+            self.preformance_pure_profit_label.setText(_translate("Form", "0₿"))
+
+    def import_init(self):
+        try:
+            file_path = QFileDialog.getOpenFileName(None, 'Select Your Backup File:', expanduser("~"))[0]
+            self.progressBar_import.setProperty("value", 20)
+            with open(file_path, "rb") as r:
+                read = pickle.load(r)
+            threading.Thread(target=self.import_, args=(read, )).start()
+            self.progressBar_import.setProperty("value", 100)
+            self.combo_box_graph_init()
+        except Exception:
+            msg = QMessageBox()
+            msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Buckup Error")
+            msg.setInformativeText(
+                f"\nChoose the Buckup file you downloaded from BitHunter.\n\n")
+            msg.setWindowTitle("Buckup-Error")
+            msg.exec_()
+
+    def import_(self, read):
+        try:
+            count = len(Extract(f"Journal_{identity}").fetchall())
+            for i in read:
+                dict_ = eval(read[i])
+                date = dict_["Date"]
+                result = dict_["Result"]
+                amount = "▲ " + dict_["Amount"].split(" ")[1] if float(result) > 0 else \
+                    "▼ " + dict_["Amount"].split(" ")[1]
+                entry = dict_["Entry"]
+                exit_ = dict_["Exit"]
+                month_year = f"{dict_['Date'].split('-')[0]}""/"f"{dict_['Date'].split('-')[2]}"
+                Journal(name=f"Journal_{identity}", id_=str(count + 1), month_year=month_year,
+                        date=date, amount=amount, entry=entry, exit_=exit_,
+                        result=result).insert()
+                count += 1
+        except Exception:
+            pass
+
+    def notification(self):
+        global old_btc_price
+        price = str(self.notify_input.text())
+        try:
+            if old_btc_price is not None:
+                if not Extract(f"Prevalues_{identity}").check_cell("Notify"):
+                    Pre_values(f"Prevalues_{identity}", "Notify", str(price)).insert()
+                else:
+                    Pre_values(f"Prevalues_{identity}", "Notify", str(price)).update()
+        except Exception:
             pass
 
     def retranslateUi(self, Form):
@@ -4304,111 +4339,31 @@ class Ui_Form(object):
         self.label_46.setText(_translate("Form", "Exit"))
         self.checkBox_opentrade.setText(_translate("Form", "Open Trade"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), _translate("Form", "TRADING  JOURNAL "))
-        self.max_gain_performance.setText(_translate("Form", "+0.12304₿"))
         self.label_48.setText(_translate("Form", "MAX Gain"))
-        self.min_gain_performance.setText(_translate("Form", "+0.12304₿"))
         self.label_50.setText(_translate("Form", "MIN Gain"))
-        self.max_loss_performance.setText(_translate("Form", "+0.12304₿"))
         self.label_52.setText(_translate("Form", "MAX Loss"))
-        self.min_loss_performance.setText(_translate("Form", "+0.12304₿"))
         self.label_54.setText(_translate("Form", "MIN Loss"))
         self.label_59.setText(_translate("Form", "Total Losses"))
-        self.preformance_total_loss_label.setText(_translate("Form", "+0.12304₿"))
         self.label_58.setText(_translate("Form", "Total Wins"))
-        self.preformance_total_wins_label.setText(_translate("Form", "+0.12304₿"))
         self.label_56.setText(_translate("Form", "Pure Profit"))
-        self.preformance_pure_profit_label.setText(_translate("Form", "+0.10304₿"))
-        self.listWidget_preformance.setSortingEnabled(False)
-        __sortingEnabled = self.listWidget_preformance.isSortingEnabled()
-        self.listWidget_preformance.setSortingEnabled(False)
-        item = self.listWidget_preformance.item(0)
-        item.setText(_translate("Form", "VIEW ALL"))
-        item = self.listWidget_preformance.item(1)
-        item.setText(_translate("Form", "9-17-2019"))
-        item = self.listWidget_preformance.item(2)
-        item.setText(_translate("Form", "9-16-2019"))
-        self.listWidget_preformance.setSortingEnabled(__sortingEnabled)
         self.note_date_2.setText(_translate("Form", "SELECT MONTH"))
         self.label_64.setText(_translate("Form", "TRADE  PERFORMANCE  GRAPH"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_3), _translate("Form", "PERFORMANCE GRAPH"))
-        self.note_TextEdit.setPlainText(
-            _translate("Form", "We will notify you after the price of BTC reaches 11,000 USD.\n"
-                               "rgb(203, 135, 0);\n"
-                               "CSS alpha transparency method (doesn\'t work in Internet Explorer 8): #div{"
-                               "background-color:rgba(255,0,0,0.5);} Use a transparent PNG image according to your "
-                               "choice as background. Use the following CSS code snippet to create a cross-browser "
-                               "alpha-transparent background. Here is an example with #000000 @ 0.4% opacity .Sep 24, "
-                               "2"))
-        self.listWidget_Note.setSortingEnabled(True)
-        __sortingEnabled = self.listWidget_Note.isSortingEnabled()
-        self.listWidget_Note.setSortingEnabled(False)
-        item = self.listWidget_Note.item(0)
-        item.setText(_translate("Form",
-                                "New World :  We will notify you after the price of BTC reaches 11,000 USD.  "
-                                "14/09/2019   4:00 AM"))
-        item = self.listWidget_Note.item(1)
-        item.setText(_translate("Form",
-                                "New World :  We will notify you after the price of BTC reaches 11,000 USD.  "
-                                "14/09/2019   4:00 AM"))
-        self.listWidget_Note.setSortingEnabled(__sortingEnabled)
+        self.note_TextEdit.setPlainText(_translate("Form", ""))
         self.note_input_add.setPlaceholderText(_translate("Form", "Title"))
         self.note_input_search.setPlaceholderText(_translate("Form", "Search"))
-        self.note_date.setText(_translate("Form", "14-09-2019        4:00 AM"))
-        self.note_title.setText(_translate("Form", "   # NEW WORLD"))
+        self.note_date.setText(_translate("Form", "        "))
+        self.note_title.setText(_translate("Form", "   #"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), _translate("Form", "BUSINESS NOTE"))
-        self.comboBox1_historical_data.setItemText(0, _translate("Form", "  MONTH"))
-        self.comboBox1_historical_data.setItemText(1, _translate("Form", "  WEEK"))
-        self.comboBox1_historical_data.setItemText(2, _translate("Form", "  DAY"))
-        self.label_18.setText(_translate("Form", "9-16-2019"))
-        self.historical_data_year_label.setText(_translate("Form", "2019"))
-        __sortingEnabled = self.listWidget_btc_historical_data.isSortingEnabled()
-        self.listWidget_btc_historical_data.setSortingEnabled(False)
-        item = self.listWidget_btc_historical_data.item(0)
-        item.setText(_translate("Form", "ALL HISTORY"))
-        item = self.listWidget_btc_historical_data.item(1)
-        item.setText(_translate("Form", "9-17-2019"))
-        item = self.listWidget_btc_historical_data.item(2)
-        item.setText(_translate("Form", "9-16-2019"))
-        item = self.listWidget_btc_historical_data.item(3)
-        item.setText(_translate("Form", "9-15-2019"))
-        self.listWidget_btc_historical_data.setSortingEnabled(__sortingEnabled)
-        self.toolBox.setItemText(self.toolBox.indexOf(self.page_3), _translate("Form", "GENERAL GRAPH"))
-
-        self.BH_jan_label.setText(_translate("Form", "Janurary  2011"))
-        self.BH_feb_label.setText(_translate("Form", "February  2011"))
-        self.BH_mar_label.setText(_translate("Form", "March  2011"))
-        self.BH_apr_label.setText(_translate("Form", "April  2011"))
-        self.BH_may_label.setText(_translate("Form", "May  2011"))
-        self.BH_june_label.setText(_translate("Form", "June  2011"))
-        self.BH_july_label.setText(_translate("Form", "July  2011"))
-        self.BH_aug_label.setText(_translate("Form", "August  2011"))
-        self.BH_sep_label.setText(_translate("Form", "September  2011"))
-        self.BH_oct_label.setText(_translate("Form", "October  2011"))
-        self.BH_nov_label.setText(_translate("Form", "November  2011"))
-        self.BH_dec_label.setText(_translate("Form", "December  2011"))
-        self.comboBox2_historical_data.setItemText(0, _translate("Form", "2010"))
-        self.comboBox2_historical_data.setItemText(1, _translate("Form", "2011"))
-        self.comboBox2_historical_data.setItemText(2, _translate("Form", "2012"))
-        self.comboBox2_historical_data.setItemText(3, _translate("Form", "2013"))
-        self.comboBox2_historical_data.setItemText(4, _translate("Form", "2014"))
-        self.comboBox2_historical_data.setItemText(5, _translate("Form", "2015"))
-        self.comboBox2_historical_data.setItemText(6, _translate("Form", "2016"))
-        self.comboBox2_historical_data.setItemText(7, _translate("Form", "2017"))
-        self.comboBox2_historical_data.setItemText(8, _translate("Form", "2018"))
-        self.comboBox2_historical_data.setItemText(9, _translate("Form", "2019"))
-        self.label_76.setText(_translate("Form", "Year :"))
-        self.toolBox.setItemText(self.toolBox.indexOf(self.page_4), _translate("Form", "MULTI GRAPH"))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_4),
-                                  _translate("Form", "BTC HISTORICAL DATA ANALYSIS"))
         self.about_btn.setText(_translate("Form", "About Me"))
-        self.import_btn.setText(_translate("Form", "Import"))
+        self.import_btn.setText(_translate("Form", "Import Backup"))
         self.progressBar_download.setFormat(_translate("Form", "%p%"))
         self.label_61.setText(_translate("Form", "Download & Import backup data."))
         self.download_btn.setText(_translate("Form", "Download "))
         self.progressBar_import.setFormat(_translate("Form", "%p%"))
-        self.notify_input.setText(_translate("Form", "45343"))
+        self.notify_input.setText(_translate("Form", ""))
         self.notify_btn.setText(_translate("Form", "Notify me"))
-        self.resut_output_0.setText(_translate("Form", "The Order size: 27617.42$"))
+        self.resut_output_0.setText(_translate("Form", "-"))
         self.radioButton_ordersize.setText(_translate("Form", "Order Size"))
         self.radioButton_risk.setText(_translate("Form", "The Risk"))
         self.radioButton_stop.setText(_translate("Form", "The Stop"))
@@ -4425,33 +4380,23 @@ class Ui_Form(object):
         self.label_3.setText(_translate("Form", "The new profit in your wallet balance."))
         self.label_2.setText(_translate("Form", "The new value of your wallet balance."))
         self.label.setText(_translate("Form", "The profit percentage of your wallet balance."))
-        self.resut_output_1.setText(_translate("Form", "564566"))
-        self.resut_output_2.setText(_translate("Form", "564566"))
-        self.resut_output_3.setText(_translate("Form", "564566"))
+        self.resut_output_1.setText(_translate("Form", "0"))
+        self.resut_output_2.setText(_translate("Form", "0"))
+        self.resut_output_3.setText(_translate("Form", "0"))
         self.Calc_btn_2.setText(_translate("Form", "CALCULATE"))
-        self.convert_output.setText(_translate("Form", "122,445,374 SATO"))
+        self.convert_output.setText(_translate("Form", "0 SAT"))
         self.label_87.setText(_translate("Form", "BTC To Sato"))
-        self.label_62.setText(_translate("Form", "Download BTC Historical Data online."))
-        self.export_btn_2.setText(_translate("Form", "Download "))
-        self.label_20.setText(_translate("Form",
-                                         "<html><head/><body><p><span style=\" font-size:10pt;\">We Update BTC "
-                                         "Historical Data From </span><a "
-                                         "href=\"https://finance.yahoo.com/quote/BTC-USD/history/\"><span style=\" "
-                                         "font-size:10pt; text-decoration: underline; "
-                                         "color:#0000ff;\">Here</span></a><span style=\" "
-                                         "font-size:10pt;\">.</span></p></body></html>"))
         self.comboBox_backup.setItemText(0, _translate("Form", "HTML"))
         self.comboBox_backup.setItemText(1, _translate("Form", "TXT"))
-        self.comboBox_backup.setItemText(2, _translate("Form", "JSON"))
+        self.comboBox_backup.setItemText(2, _translate("Form", "Backup"))
         self.checkBox.setText(_translate("Form", "Risk in Satochi"))
         self.checkBox_2.setText(_translate("Form", "Risk in Percentage"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_5), _translate("Form", "Calculator      Features"))
         self.label_10.setText(_translate("Form", "Rate"))
         self.label_8.setText(_translate("Form", "Wins"))
         self.label_7.setText(_translate("Form", "losses"))
-
         self.name_label.setText(_translate("Form", f"{username.upper()}"))
-
+        self.data_size_label.setText(_translate("Form", f"Data Storage Size : {file_size('database.db')}"))
         self.label_21.setText(_translate("Form", "Pure Profit"))
         self.label_22.setText(_translate("Form", "Total Wins"))
         self.label_23.setText(_translate("Form", "Total Losses"))
@@ -4461,7 +4406,6 @@ class Ui_Form(object):
 
 if __name__ == "__main__":
     import sys
-
     app = QtWidgets.QApplication(sys.argv)
     Form = QtWidgets.QWidget()
     ui = Ui_Form()

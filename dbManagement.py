@@ -42,45 +42,45 @@ class Table:
         self._cursor = api if self._name in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"] else c
 
     def create(self):
-        if self._name.split("_")[0] == "Journal":
-            c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
-                                id INTEGER PRIMARY KEY,
-                                month TEXT,
-                                year TEXT,
-                                date TEXT,
-                                amount REAL,
-                                entry REAL,
-                                exit REAL,
-                                result REAL
-                                )""")
-        elif self._name.split("_")[0] == "Notes":
-            c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
-                                title TEXT PRIMARY KEY,
-                                date TEXT,
-                                Note TEXT
-                                )""")
-        elif self._name.split("_")[0] == "Prevalues":
-            c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
-                                id TEXT PRIMARY KEY,
-                                data TEXT
-                                )""")
+        try:
+            if self._name.split("_")[0] == "Journal":
+                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                                    id INTEGER PRIMARY KEY,
+                                    month_year TEXT,
+                                    date TEXT,
+                                    amount REAL,
+                                    entry REAL,
+                                    exit REAL,
+                                    result REAL
+                                    )""")
+            elif self._name.split("_")[0] == "Notes":
+                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                                    title TEXT PRIMARY KEY,
+                                    date TEXT,
+                                    Note TEXT
+                                    )""")
+            elif self._name.split("_")[0] == "Prevalues":
+                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                                    id TEXT PRIMARY KEY,
+                                    data TEXT
+                                    )""")
 
-        elif self._name.split("_")[0] in ["BTCHdaily", "BTCHweekly", "BTCHmonthly"]:
-            api.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}( dwm INTEGER , date TEXT, price REAL )""")
-            # we will be using thread to download bitcoin historical data online and upload it in database
-            # we gonna need a temporary cursor (api) for that
-
-        elif self._name == "Sign":
-            c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
-                                            username TEXT PRIMARY KEY,
-                                            password TEXT,
-                                            pass TEXT
-                                            )""")
+            elif self._name == "Sign":
+                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                                                username TEXT PRIMARY KEY,
+                                                password TEXT,
+                                                pass TEXT
+                                                )""")
+        except Exception:
+            pass
 
     def drop(self):
-        sql = f"DROP TABLE {self._name}"
-        with conn:
-            self._cursor.execute(sql)
+        try:
+            sql = f"DROP TABLE {self._name}"
+            with conn:
+                self._cursor.execute(sql)
+        except Exception:
+           pass
 
     @property
     def check(self):
@@ -90,6 +90,8 @@ class Table:
                 result = self._cursor.execute(query).fetchone()
             return False if result is None else result[0] == self._name
         except sqlite3.Error:
+            pass
+        except Exception:
             pass
 
 
@@ -113,17 +115,18 @@ class Sign:
                           {"pass": self.pass_, "password": self.password, 'username': self.username})
         except sqlite3.Error:
             pass
+        except Exception:
+            pass
         finally:
             lock.release()
 
 
 class Journal:
 
-    def __init__(self, name, id_, month, year, date, amount, entry, exit_, result):
+    def __init__(self, name, id_, month_year, date, amount, entry, exit_, result):
         self.id_ = id_
         self.date = date
-        self.month = month
-        self.year = year
+        self.month_year = month_year
         self.amount = amount
         self.entry = entry
         self.exit_ = exit_
@@ -134,11 +137,12 @@ class Journal:
         try:
             lock.acquire(True)
             with conn:
-                c.execute(f"INSERT INTO {self.name} VALUES (:id, :month, :year, :date, :amount, :entry, :exit, :result)"
-                          , {"id": self.id_, 'month': self.month, 'year': self.year, 'date': self.date,
+                c.execute(f"INSERT INTO {self.name} VALUES (:id, :month_year, :date, :amount, :entry, :exit, :result)"
+                          , {"id": self.id_, 'month_year': self.month_year,'date': self.date,
                              "amount": self.amount, "entry": self.entry, "exit": self.exit_, "result": self.result})
-        except sqlite3.Error as e:
-            print("sql", e)
+        except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -153,6 +157,8 @@ class Journal:
                                                                    "result": self.result})
         except sqlite3.Error:
             pass
+        except Exception:
+            pass
         finally:
             lock.release()
 
@@ -162,6 +168,8 @@ class Journal:
             with conn:
                 c.execute(f"""UPDATE {self.name} SET id = :id_ WHERE id = :id""", {"id": self.id_, "id_": value})
         except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -183,6 +191,8 @@ class Notes:
                           {'title': self.title, 'date': self.date, 'note': self.note})
         except sqlite3.Error:
             pass
+        except Exception:
+            pass
         finally:
             lock.release()
 
@@ -193,6 +203,21 @@ class Notes:
                 c.execute(f"""UPDATE {self.name} SET date = :date, note = :note WHERE title = :title""",
                           {'title': self.title, 'date': self.date, 'note': self.note})
         except sqlite3.Error:
+            pass
+        except Exception:
+            pass
+        finally:
+            lock.release()
+
+    def update_one(self, note):
+        try:
+            lock.acquire(True)
+            with conn:
+                c.execute(f"""UPDATE {self.name} SET note = :note WHERE title = :title""",
+                          {"title": self.title, "note": note})
+        except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -209,9 +234,11 @@ class Pre_values:
         try:
             lock.acquire(True)
             with conn:
-                c.execute(f"INSERT INTO {self.name} VALUES (:id, :data)",
-                          {'id': self.id_, 'data': self.data})
+                api.execute(f"INSERT INTO {self.name} VALUES (:id, :data)",
+                            {'id': self.id_, 'data': self.data})
         except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -220,29 +247,11 @@ class Pre_values:
         try:
             lock.acquire(True)
             with conn:
-                c.execute(f"""UPDATE {self.name} SET data = :data WHERE id = :id""",
-                          {'id': self.id_, 'data': self.data})
+                api.execute(f"""UPDATE {self.name} SET data = :data WHERE id = :id""",
+                            {'id': self.id_, 'data': self.data})
         except sqlite3.Error:
             pass
-        finally:
-            lock.release()
-
-
-class Historical_data:
-
-    def __init__(self, value, date, price, name):
-        self._value = value
-        self._date = date
-        self._price = price
-        self._name = name
-
-    def insert(self):
-        try:
-            lock.acquire(True)
-            with conn:
-                api.execute(f"INSERT INTO {self._name} VALUES (:dwm, :date, :price)",
-                            {'dwm': self._value, 'date': self._date, 'price': self._price})
-        except sqlite3.Error:
+        except Exception:
             pass
         finally:
             lock.release()
@@ -252,7 +261,8 @@ class Extract:
 
     def __init__(self, name):
         self.name = name
-        self.cursor = api if self.name in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"] else c
+        self.cursor = H if self.name in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"] else api if \
+            self.name.split("_")[0] == "Prevalues" else c
 
     def get_by_id(self, id_):
         try:
@@ -261,6 +271,8 @@ class Extract:
                 self.cursor.execute(f"SELECT * FROM {self.name} WHERE id= :id", {'id': id_})
                 return [id_ for id_ in self.cursor.fetchall()[0]]
         except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -273,16 +285,47 @@ class Extract:
                 return [cell for cell in self.cursor.fetchall()[0]]
         except sqlite3.Error:
             pass
+        except Exception:
+            pass
+        finally:
+            lock.release()
+
+    def get_for_graph_combo(self):
+        try:
+            lock.acquire(True)
+            with conn:
+                self.cursor.execute(f"SELECT id, month_year FROM {self.name};")
+                return self.cursor.fetchall()
+        except sqlite3.Error:
+            pass
+        except Exception:
+            pass
         finally:
             lock.release()
 
     def check_cell(self, id_):
         try:
-            if Extract(self.name).get_by_id(id_) is not None:
+            check = [] if Extract(self.name).get_by_id(id_) is None else Extract(self.name).get_by_id(id_)
+            if len(check) != 0:
                 return True
             else:
                 return False
         except IndexError:
+            return False
+        except Exception:
+            return False
+
+    def check_by(self, column, cell):
+        try:
+            data = Extract(self.name).get_by_column(column=column, cell=cell)
+            final = [] if data is None else data
+            if len(final) != 0:
+                return True
+            else:
+                return False
+        except IndexError:
+            return False
+        except Exception:
             return False
 
     def delete(self, where=None, cell=None):
@@ -290,6 +333,10 @@ class Extract:
             lock.acquire(True)
             with conn:
                 self.cursor.execute(f"DELETE from {self.name} WHERE {where} = :column", {'column': cell})
+        except sqlite3.Error:
+            pass
+        except Exception:
+            pass
         finally:
             lock.release()
 
@@ -299,6 +346,8 @@ class Extract:
             with conn:
                 return [column[0] for column in self.cursor.execute(f"SELECT {column} FROM {self.name}")]
         except sqlite3.Error:
+            pass
+        except Exception:
             pass
         finally:
             lock.release()
@@ -321,29 +370,5 @@ class Extract:
 conn = sqlite3.connect('database.db', check_same_thread=False)
 c = conn.cursor()
 api = conn.cursor()
+H = conn.cursor()
 lock = threading.Lock()
-
-
-"""
-====Tables and cursor====
- table-1: journal .c => rate_N .c  [x for x in a if x < 0 ] -  and sum()
-                        rate_p .c  [x for x in a if x >= 0 ] + and sum()
-                        ADD .c      sum(list)
-
- table-2: Notes .c
-
- table-3:  Pre_values => ["wallet .c", "notify .c", "Currency_api .c", "open_trade .c, combo_Month","Jsave"]
-
- table-4-5-6: BTC_H_daily .api, BTC_H_weekly .api, BTC_H_monthly .api 
-
- table-7 sign
-
-
-                                Wallet INTEGER,
-                                Notify INTEGER,
-                                Currency_exchange TEXT,
-                                Open_trade TEXT,
-                                combo INTEGER
-
-==============
-"""

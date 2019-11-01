@@ -1,6 +1,0 @@
-<RCC>
-  <qresource prefix="icon">
-    <file>Images/picabout.png</file>
-    <file>Images/MainWinTite.png</file>
-  </qresource>
-</RCC>
