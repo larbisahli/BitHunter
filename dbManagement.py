@@ -39,12 +39,12 @@ class Table:
 
     def __init__(self, name):
         self._name = name
-        self._cursor = api if self._name in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"] else c
+        self.cursor = api if self._name.split("_")[0] == "Prevalues" else c
 
     def create(self):
         try:
             if self._name.split("_")[0] == "Journal":
-                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                self.cursor.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
                                     id INTEGER PRIMARY KEY,
                                     month_year TEXT,
                                     date TEXT,
@@ -54,19 +54,19 @@ class Table:
                                     result REAL
                                     )""")
             elif self._name.split("_")[0] == "Notes":
-                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                self.cursor.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
                                     title TEXT PRIMARY KEY,
                                     date TEXT,
                                     Note TEXT
                                     )""")
             elif self._name.split("_")[0] == "Prevalues":
-                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                self.cursor.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
                                     id TEXT PRIMARY KEY,
                                     data TEXT
                                     )""")
 
             elif self._name == "Sign":
-                c.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
+                self.cursor.execute(f"""CREATE TABLE IF NOT EXISTS {self._name}(
                                                 username TEXT PRIMARY KEY,
                                                 password TEXT,
                                                 pass TEXT
@@ -78,7 +78,7 @@ class Table:
         try:
             sql = f"DROP TABLE {self._name}"
             with conn:
-                self._cursor.execute(sql)
+                self.cursor.execute(sql)
         except Exception:
            pass
 
@@ -87,7 +87,7 @@ class Table:
         try:
             with conn:
                 query = f"SELECT name from sqlite_master WHERE type='table' AND name='{self._name}';"
-                result = self._cursor.execute(query).fetchone()
+                result = self.cursor.execute(query).fetchone()
             return False if result is None else result[0] == self._name
         except sqlite3.Error:
             pass
@@ -102,7 +102,6 @@ that will be closed once you return to your previous indentation level. """
 class Sign:
 
     def __init__(self, password, username):
-
         self.pass_ = hash_(str(username))
         self.username = encrypt(str(username))
         self.password = encrypt(str(password))
@@ -261,8 +260,7 @@ class Extract:
 
     def __init__(self, name):
         self.name = name
-        self.cursor = H if self.name in ["BTC_H_daily", "BTC_H_weekly", "BTC_H_monthly"] else api if \
-            self.name.split("_")[0] == "Prevalues" else c
+        self.cursor = api if self.name.split("_")[0] == "Prevalues" else c
 
     def get_by_id(self, id_):
         try:
@@ -370,5 +368,4 @@ class Extract:
 conn = sqlite3.connect('database.db', check_same_thread=False)
 c = conn.cursor()
 api = conn.cursor()
-H = conn.cursor()
 lock = threading.Lock()

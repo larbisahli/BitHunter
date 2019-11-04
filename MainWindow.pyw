@@ -12,7 +12,6 @@
             ####################################
 """
 import datetime
-import json
 import pickle
 import time
 import traceback
@@ -27,7 +26,7 @@ import os
 from json import JSONDecodeError
 import requests
 from dbManagement import *
-from html import *
+from x_html import *
 import matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -38,7 +37,6 @@ from matplotlib import style
 from matplotlib.dates import MonthLocator, WeekdayLocator, DateFormatter
 from requests.exceptions import ConnectionError
 from playsound import playsound
-
 
 def current_time():
     now = datetime.datetime.now()
@@ -124,7 +122,6 @@ try:
     old_btc_price = API().btc()[1]
 except Exception:
     old_btc_price = None
-
 
 # ======================
 
@@ -226,7 +223,7 @@ class Thread:
 
 
 class Ui_Form(object):
-
+    my_wallet = 0
     def opentrade_init(self):
         try:
             _translate = QtCore.QCoreApplication.translate
@@ -410,39 +407,54 @@ class Ui_Form(object):
             pass
 
     def update(self):
-        global old_btc_price
-        _translate = QtCore.QCoreApplication.translate
         try:
+            global old_btc_price
+            _translate = QtCore.QCoreApplication.translate
+            noti_data = Extract(f"Prevalues_{identity}").get_by_id("Notify")
+            if noti_data is not None:
+                price = eval(noti_data[1])
+                if float(price[0]) != 0:
+                    if int(price[1]) >= int(price[0]):
+                        if int(price[1]) <= old_btc_price:
+                            playsound(os.path.join("Images", "long-chime-sound.mp3"))
+                            Pre_values(f"Prevalues_{identity}", "Notify", str([0])).update()
+                        else:
+                            pass
+                    elif int(price[1]) <= int(price[0]):
+                        if int(price[1]) >= old_btc_price:
+                            playsound(os.path.join("Images", "long-chime-sound.mp3"))
+                            Pre_values(f"Prevalues_{identity}", "Notify", str([0])).update()
+                        else:
+                            pass
+            # =======================
             btc_price = API().btc()
             if btc_price is not None:
                 updated_btc_price = btc_price[1]
                 str_btc_price = btc_price[0]
                 if updated_btc_price >= old_btc_price:
-                    color = "color: rgb(0, 132, 0);"
+                    self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                 "background: transparent;\n"
+                                                 "color: rgb(0, 132, 0);")
 
+                    self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
                 else:
-                    color = "color: rgb(188, 0, 0);"
+                    self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
+                                                 "background: transparent;\n"
+                                                 "color: rgb(188, 0, 0);")
+                    self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
 
-                self.btc_price.setStyleSheet("font: bold 11pt \"Courier\";\n"
-                                             "background: transparent;\n"
-                                             f"{color}\n")
-                self.btc_price.setText(_translate("Form", f"{str_btc_price.split('.')[0]}$"))
                 old_btc_price = updated_btc_price
 
-            # =======================
-
+                # =======================
                 if Extract(f"Prevalues_{identity}").check_cell("currency_api"):
                     value = eval(Extract(f"Prevalues_{identity}").get_by_id("currency_api")[1])
                     currency_price = value["currency_Price"]
-
                     if Extract(f"Prevalues_{identity}").check_cell("Wallet"):
                         input_wallet = Extract(f"Prevalues_{identity}").get_by_id("Wallet")
-
                         input_wallet = input_wallet[1]
 
                         xusd = round(((float(input_wallet) * 0.00000001) * old_btc_price), 1)
                         usd = str(f"{int(xusd):,d}") + "." + str(round(abs(xusd - int(xusd)), 1)).split(".")[1]
-
                         xcurrency = round(float(currency_price) * xusd, 1)
                         currency = str(f"{int(xcurrency):,d}") + "." + \
                                    str(round(abs(xcurrency - int(xcurrency)), 1)).split(".")[1]
@@ -451,6 +463,7 @@ class Ui_Form(object):
                         self.wallet_SS_label.setText(_translate("Form", f"{self.zero_remover(currency)}"))
             else:
                 pass
+
         except Exception:
             pass
 
@@ -472,9 +485,10 @@ class Ui_Form(object):
         global identity
         _translate = QtCore.QCoreApplication.translate
         wallet_ = str(self.input_wallet_balance.text())
+
         try:
-            if wallet_ == "":
-                input_wallet = "".join(wallet_).split(",")
+            if wallet_ != "":
+                input_wallet = "".join(wallet_.split(","))
                 now = datetime.datetime.now()
                 _btc_ = old_btc_price
                 currency_ = "SGD"
@@ -551,25 +565,9 @@ class Ui_Form(object):
 
     @staticmethod
     def small_value(value):
-        """ handling very small values, from 1e-05 to 0.000005. """
+        """ handling very small values, from 1e-05 to 0.000005."""
         try:
-            pass_ = str(value).split("-")
-            if pass_[0] != "":
-                if len(str(value).split("-")) >= 2:
-                    zero = ""
-                    for i in range(int(pass_[1])):
-                        zero += "0"
-                    return f"0.{zero}{pass_[0].split('e')[0]}"
-                else:
-                    return value
-            else:
-                if len(pass_[1].split("e")) >= 2:
-                    zero = ""
-                    for i in range(int(pass_[2])):
-                        zero += "0"
-                    return f"-0.{zero}{pass_[1].split('e')[0]}"
-                else:
-                    return value
+            return "{:.5f}".format(float(value))
         except Exception:
             pass
 
@@ -1840,6 +1838,7 @@ class Ui_Form(object):
                                              "}\n"
                                              "")
         self.note_input_search.setText("")
+        self.note_input_search.textEdited.connect(self.search_event)
         self.note_input_search.setAlignment(QtCore.Qt.AlignCenter)
         self.note_input_search.setObjectName("note_input_search")
         self.line_6 = QtWidgets.QFrame(self.tab_2)
@@ -1984,40 +1983,9 @@ class Ui_Form(object):
         # =======================================
         self.tab_5 = QtWidgets.QWidget()
         self.tab_5.setObjectName("tab_5")
-        self.about_btn = QtWidgets.QPushButton(self.tab_5)
-        self.about_btn.setGeometry(QtCore.QRect(470, 10, 91, 31))
-        self.about_btn.setStyleSheet("\n"
-                                     "\n"
-                                     "*{\n"
-                                     "color:rgb(1, 1, 1);\n"
-                                     "}\n"
-                                     "\n"
-                                     "QPushButton{\n"
-                                     "border: 1px solid rgb(255, 170, 0);\n"
-                                     "background:  rgb(140, 140, 140);\n"
-                                     "border-radius:10px;\n"
-                                     "font: 75 10pt \"MS Shell Dlg 2\";\n"
-                                     "}\n"
-                                     "\n"
-                                     "\n"
-                                     "QPushButton:hover{\n"
-                                     "\n"
-                                     "    color: rgb(255, 255, 255);\n"
-                                     "background-color: rgb(83, 83, 83);\n"
-                                     "background:qlineargradient(spread:pad, x1:0.443, y1:0.670545, x2:0, y2:0.801,"
-                                     " stop:0 rgba(0, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));\n"
-                                     "border-radius:10px;\n"
-                                     "font: 75 10pt \"MS Shell Dlg 2\";\n"
-                                     "}\n"
-                                     "\n"
-                                     "QPushButton:pressed \n"
-                                     "{\n"
-                                     " border: 2px inset    rgb(255, 170, 0);\n"
-                                     "background-color: #333;\n"
-                                     "}")
-        self.about_btn.setObjectName("about_btn")
+
         self.import_btn = QtWidgets.QPushButton(self.tab_5)
-        self.import_btn.setGeometry(QtCore.QRect(20, 160, 111, 31))
+        self.import_btn.setGeometry(QtCore.QRect(5, 160, 121, 31))
         self.import_btn.setStyleSheet("*{\n"
                                       "color: rgb(211, 211, 211);\n"
                                       "}\n"
@@ -2034,7 +2002,7 @@ class Ui_Form(object):
                                       "border: 1px solid  #333;\n"
                                       "background:  rgb(90, 90, 90);\n"
                                       "border-radius:10px;\n"
-                                      "font: 75 9pt \"MS Shell Dlg 2\";\n"
+                                      "font: 75 8pt \"MS Shell Dlg 2\";\n"
                                       "}\n"
                                       "\n"
                                       "\n"
@@ -2043,7 +2011,7 @@ class Ui_Form(object):
                                       "color: rgb(225, 255, 255);\n"
                                       "    background-color: rgb(66, 66, 66);\n"
                                       "border-radius:10px;\n"
-                                      "font: 75 8pt \"MS Shell Dlg 2\";\n"
+                                      "font: 75 7pt \"MS Shell Dlg 2\";\n"
                                       "}\n"
                                       "\n"
                                       "QPushButton:pressed \n"
@@ -2205,6 +2173,7 @@ class Ui_Form(object):
         icon14.addPixmap(QtGui.QPixmap(":/images/Images/icons8-notification-26.png"), QtGui.QIcon.Normal,
                          QtGui.QIcon.On)
         self.notify_btn.setIcon(icon14)
+        self.notify_btn.clicked.connect(self.notification)
         self.notify_btn.setObjectName("notify_btn")
         self.line_14 = QtWidgets.QFrame(self.tab_5)
         self.line_14.setGeometry(QtCore.QRect(0, 0, 1313, 2))
@@ -3047,7 +3016,7 @@ class Ui_Form(object):
         QtCore.QMetaObject.connectSlotsByName(Form)
         # ----------------------------------------
         self.tables_init()
-        threading.Thread(target=lambda: Thread.every(30, self.update)).start()
+        threading.Thread(target=lambda: Thread.every(40, self.update)).start()
         self.opentrade_init()
         self.table()
         self.currency_combo_init()
@@ -3055,8 +3024,8 @@ class Ui_Form(object):
         self.note_init()
         self.note_first_init()
         self.combo_box_graph_init()
-
         # =========================================
+
 
     def tables_init(self):
         Table(f"Prevalues_{identity}").create()
@@ -4062,27 +4031,27 @@ class Ui_Form(object):
             pass
 
     def notes(self, selected_item):
+        _translate = QtCore.QCoreApplication.translate
+        search_t = str(self.note_input_search.text())
         try:
             data = selected_item.text().split(":")[0].lower()
-            with open("current_note.dat", "wb") as w:
-                pickle.dump(data, w)
             _translate = QtCore.QCoreApplication.translate
             note = Extract(f"Notes_{identity}").get_by_column(column="title", cell=data)
             self.note_date.setText(_translate("Form", f"{eval(note[1])[0]}     {eval(note[1])[1]}"))
             self.note_title.setText(_translate("Form", f"   #  {data}"))
             self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(note[2])}"))
+            if search_t != "":
+                self.note_input_search.setText(_translate("Form", ""))
+                self.note_init()
         except Exception:
             pass
 
     def del_note(self):
         _translate = QtCore.QCoreApplication.translate
         try:
-            with open("current_note.dat", "rb") as r:
-                title = pickle.load(r)
+            title = self.note_title.text().split("#")[1].split(" ")[2]
             Extract(name=f"Notes_{identity}").delete(where="title", cell=title)
             self.note_init()
-            with open("current_note.dat", "wb"):
-                pass
             self.note_date.setText(_translate("Form", " "))
             self.note_title.setText(_translate("Form", "   # "))
             self.note_TextEdit.setPlainText(_translate("Form", " "))
@@ -4099,27 +4068,11 @@ class Ui_Form(object):
 
     def save_note(self):
         try:
-            with open("current_note.dat", "rb") as r:
-                try:
-                    title = pickle.load(r)
-                except EOFError:
-                    msg = QMessageBox()
-                    msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
-                    msg.setIcon(QMessageBox.Warning)
-                    msg.setText("select Error")
-                    msg.setInformativeText(
-                        "\nPlease select your Note title before saving.\n\n")
-                    msg.setWindowTitle("input-Error")
-                    msg.exec_()
-                    title = ""
-
+            title = self.note_title.text().split("#")[1].split(" ")[2]
             text = str(self.note_TextEdit.toPlainText())
             encrypt_ = onetimepad.encrypt(text, key)
             Notes(name=f"Notes_{identity}", title=title, date=0, note=0).update_one(note=encrypt_)
-
             self.note_init()
-            with open("current_note.dat", "wb"):
-                pass
         except Exception:
             pass
 
@@ -4127,8 +4080,6 @@ class Ui_Form(object):
         _translate = QtCore.QCoreApplication.translate
         try:
             title = str(self.note_input_add.text().lower())
-            with open("current_note.dat", "wb") as w:
-                pickle.dump(title, w)
             if title != "":
                 date = datetime.date.today()
                 month = date.month
@@ -4140,7 +4091,7 @@ class Ui_Form(object):
                     Notes(name=f"Notes_{identity}", title=title, date=str(date), note="").insert()
 
                     self.note_date.setText(_translate("Form", f"{date_}     {current_time()}"))
-                    self.note_title.setText(_translate("Form", f"   # {title}"))
+                    self.note_title.setText(_translate("Form", f"   #  {title}"))
                     self.note_TextEdit.setPlainText(_translate("Form", ""))
                     self.note_init()
                 else:
@@ -4152,6 +4103,38 @@ class Ui_Form(object):
                         "\nYour Note already exist.\n\n")
                     msg.setWindowTitle("input-Error")
                     msg.exec_()
+        except Exception:
+            pass
+
+    def search_event(self):
+        _translate = QtCore.QCoreApplication.translate
+        t_ = self.note_input_search.text()
+        try:
+            if t_ != "":
+                titles = Extract(f"Notes_{identity}").select_column("title")
+                # ================
+                _translate = QtCore.QCoreApplication.translate
+                self.listWidget_Note.setSortingEnabled(True)
+                __sortingEnabled = self.listWidget_Note.isSortingEnabled()
+                self.listWidget_Note.setSortingEnabled(False)
+                self.listWidget_Note.clear()
+                k = 0
+                for i in titles:
+                    if t_ in i:
+                        if i.rindex(t_) == 0:
+                            item = QtWidgets.QListWidgetItem()
+                            self.listWidget_Note.addItem(item)
+                            item = self.listWidget_Note.item(k)
+                            data_note = Extract(f"Notes_{identity}").get_by_column(column="title", cell=i)
+                            text = decrypt(data_note[2])
+                            item.setText(_translate("Form", f"{i.upper()}: \n{text[:53]}\n"
+                                                            f"{eval(data_note[1])[0]}   {eval(data_note[1])[1]}"))
+                            k += 1
+                self.listWidget_Note.setSortingEnabled(__sortingEnabled)
+            else:
+                self.note_init()
+        except TypeError:
+            pass
         except Exception:
             pass
 
@@ -4183,10 +4166,10 @@ class Ui_Form(object):
             pass
 
     def combo_box_graph_init(self):
-
         try:
             _translate = QtCore.QCoreApplication.translate
             list_ = Extract(f"Journal_{identity}").get_for_graph_combo()
+            self.comboBox2_historical_data_2.clear()
             keys = ["VIEW ALL"]
             for i in list_:
                 if not i[1] in keys:
@@ -4274,7 +4257,10 @@ class Ui_Form(object):
                 read = pickle.load(r)
             threading.Thread(target=self.import_, args=(read, )).start()
             self.progressBar_import.setProperty("value", 100)
+            time.sleep(2)
             self.combo_box_graph_init()
+            self.table()
+            self.compare_calc()
         except Exception:
             msg = QMessageBox()
             msg.setWindowIcon(QtGui.QIcon('Images\\icon.ico'))
@@ -4307,12 +4293,13 @@ class Ui_Form(object):
     def notification(self):
         global old_btc_price
         price = str(self.notify_input.text())
+        data = [old_btc_price, price]
         try:
             if old_btc_price is not None:
                 if not Extract(f"Prevalues_{identity}").check_cell("Notify"):
-                    Pre_values(f"Prevalues_{identity}", "Notify", str(price)).insert()
+                    Pre_values(f"Prevalues_{identity}", "Notify", str(data)).insert()
                 else:
-                    Pre_values(f"Prevalues_{identity}", "Notify", str(price)).update()
+                    Pre_values(f"Prevalues_{identity}", "Notify", str(data)).update()
         except Exception:
             pass
 
@@ -4355,7 +4342,6 @@ class Ui_Form(object):
         self.note_date.setText(_translate("Form", "        "))
         self.note_title.setText(_translate("Form", "   #"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), _translate("Form", "BUSINESS NOTE"))
-        self.about_btn.setText(_translate("Form", "About Me"))
         self.import_btn.setText(_translate("Form", "Import Backup"))
         self.progressBar_download.setFormat(_translate("Form", "%p%"))
         self.label_61.setText(_translate("Form", "Download & Import backup data."))
@@ -4405,6 +4391,7 @@ class Ui_Form(object):
 
 
 if __name__ == "__main__":
+
     import sys
     app = QtWidgets.QApplication(sys.argv)
     Form = QtWidgets.QWidget()
