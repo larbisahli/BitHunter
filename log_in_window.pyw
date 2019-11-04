@@ -6,7 +6,7 @@
             #                                  #
             #       Author: Larbi Sahli        #
             #                                  #
-            #  https://github.com/Larbi-Sahli  #
+            #  https://github.com/larbisahli  #
             #                                  #
             ####################################
 """
