@@ -4002,7 +4002,7 @@ class Ui_Form(object):
             if len(data_note) != 0:
                 note = data_note[len(data_note) - 1]
                 self.note_date.setText(_translate("Form", f"{eval(note[1])[0]}     {eval(note[1])[1]}"))
-                self.note_title.setText(_translate("Form", f"   #  {note[0]}"))
+                self.note_title.setText(_translate("Form", f"   #{note[0]}"))
                 self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(note[2])}"))
         except Exception:
             pass
@@ -4038,7 +4038,7 @@ class Ui_Form(object):
             _translate = QtCore.QCoreApplication.translate
             note = Extract(f"Notes_{identity}").get_by_column(column="title", cell=data)
             self.note_date.setText(_translate("Form", f"{eval(note[1])[0]}     {eval(note[1])[1]}"))
-            self.note_title.setText(_translate("Form", f"   #  {data}"))
+            self.note_title.setText(_translate("Form", f"   #{data}"))
             self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(note[2])}"))
             if search_t != "":
                 self.note_input_search.setText(_translate("Form", ""))
@@ -4049,11 +4049,11 @@ class Ui_Form(object):
     def del_note(self):
         _translate = QtCore.QCoreApplication.translate
         try:
-            title = self.note_title.text().split("#")[1].split(" ")[2]
+            title = self.note_title.text().split("#")[1]
             Extract(name=f"Notes_{identity}").delete(where="title", cell=title)
             self.note_init()
             self.note_date.setText(_translate("Form", " "))
-            self.note_title.setText(_translate("Form", "   # "))
+            self.note_title.setText(_translate("Form", "   #"))
             self.note_TextEdit.setPlainText(_translate("Form", " "))
 
         except Exception:
@@ -4068,7 +4068,7 @@ class Ui_Form(object):
 
     def save_note(self):
         try:
-            title = self.note_title.text().split("#")[1].split(" ")[2]
+            title = self.note_title.text().split("#")[1]
             text = str(self.note_TextEdit.toPlainText())
             encrypt_ = onetimepad.encrypt(text, key)
             Notes(name=f"Notes_{identity}", title=title, date=0, note=0).update_one(note=encrypt_)
@@ -4091,7 +4091,7 @@ class Ui_Form(object):
                     Notes(name=f"Notes_{identity}", title=title, date=str(date), note="").insert()
 
                     self.note_date.setText(_translate("Form", f"{date_}     {current_time()}"))
-                    self.note_title.setText(_translate("Form", f"   #  {title}"))
+                    self.note_title.setText(_translate("Form", f"   #{title}"))
                     self.note_TextEdit.setPlainText(_translate("Form", ""))
                     self.note_init()
                 else:
@@ -4147,7 +4147,7 @@ class Ui_Form(object):
             for i in data_note:
                 if title_s == i[0]:
                     self.note_date.setText(_translate("Form", f"{eval(i[1])[0]}    {eval(i[1])[1]}"))
-                    self.note_title.setText(_translate("Form", f"   #  {i[0]}"))
+                    self.note_title.setText(_translate("Form", f"   #{i[0]}"))
                     self.note_TextEdit.setPlainText(_translate("Form", f"{decrypt(i[2])}"))
                     with open("current_note.dat", "wb") as w:
                         pickle.dump(title_s, w)
